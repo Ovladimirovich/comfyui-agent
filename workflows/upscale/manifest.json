@@ -1,0 +1,34 @@
+{
+  "id": "upscale",
+  "version": "1.0.0",
+  "capability": "image.upscale",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "inputs": {
+    "upscale_method": {"node": "20", "field": "upscale_method"},
+    "width": {"node": "20", "field": "width"},
+    "height": {"node": "20", "field": "height"}
+  },
+  "asset_inputs": {
+    "image": {"node": "10", "field": "image", "kind": "image"}
+  },
+  "outputs": {
+    "result": {"node": "30", "kind": "image"}
+  },
+  "parameters": {
+    "upscale_method": {"default": "lanczos"},
+    "width": {"min": 1, "max": 8192},
+    "height": {"min": 1, "max": 8192}
+  },
+  "required_models": [],
+  "required_custom_nodes": [],
+  "min_comfyui_version": "0.0.0",
+  "requirements": {"accelerator": "any", "xformers": false, "min_vram_gb": 2, "fp16": true},
+  "limits": {
+    "max_upload_bytes": 209715200,
+    "max_asset_duration": 0,
+    "max_video_width": 0,
+    "max_video_height": 0,
+    "max_sequence_length": 0
+  }
+}

@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment / Secrets
+.env
+.env.local
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Temporary / Generated
+__tmp_*/
+__e2e_*/
+__tmptest_*/
+_e2e_tmp/
+data/assets/
+data/feedback/
+data/*.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ComfyUI local data (if any)
+ComfyUI/
+models/

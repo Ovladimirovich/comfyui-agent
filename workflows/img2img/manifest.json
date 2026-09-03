@@ -1,0 +1,37 @@
+{
+  "id": "img2img",
+  "version": "1.0.0",
+  "capability": "image.edit",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "inputs": {
+    "prompt": {"node": "2", "field": "text"},
+    "negative_prompt": {"node": "3", "field": "text"},
+    "seed": {"node": "5", "field": "seed"},
+    "steps": {"node": "5", "field": "steps"},
+    "denoise": {"node": "5", "field": "denoise"}
+  },
+  "asset_inputs": {
+    "image": {"node": "10", "field": "image", "kind": "image"}
+  },
+  "outputs": {
+    "result": {"node": "9", "kind": "image"}
+  },
+  "parameters": {
+    "steps": {"default": 10, "min": 1, "max": 60},
+    "cfg": {"default": 7, "min": 1, "max": 20},
+    "denoise": {"default": 0.6, "min": 0.0, "max": 1.0},
+    "seed": {"default": 0, "min": 0, "max": 4294967295}
+  },
+  "required_models": ["checkpoint"],
+  "required_custom_nodes": [],
+  "min_comfyui_version": "0.0.0",
+  "requirements": {"accelerator": "any", "xformers": false, "min_vram_gb": 4, "fp16": true},
+  "limits": {
+    "max_upload_bytes": 209715200,
+    "max_asset_duration": 0,
+    "max_video_width": 0,
+    "max_video_height": 0,
+    "max_sequence_length": 0
+  }
+}

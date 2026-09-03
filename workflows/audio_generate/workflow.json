@@ -1,0 +1,26 @@
+{
+  "1": {
+    "inputs": {
+      "prompt": "a calm lo-fi beat with gentle piano",
+      "seed": 0,
+      "title": "M7 Demo",
+      "tags": "",
+      "negative_tags": "",
+      "duration": 8.0,
+      "model": "sonilo-s-1.5-mini",
+      "cfg_strength": 6.5,
+      "normalize": "auto",
+      "steps": 50
+    },
+    "class_type": "SoniloTextToMusic",
+    "_meta": { "title": "Sonilo Text To Music" }
+  },
+  "2": {
+    "inputs": {
+      "audio": ["1", 0],
+      "filename_prefix": "multimodal/audio_"
+    },
+    "class_type": "SaveAudio",
+    "_meta": { "title": "Save Audio" }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "video_generate",
+  "version": "1.0.0",
+  "capability": "video.generate",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "note": "M6: минимальный реальный video.generate. Генерирует N кадров через тот же checkpoint, что и txt2img (KSampler batch_size=frames), и собирает MP4 узлами CreateVideo + SaveVideo (VideoHelperSuite). Никаких media-specific веток в ядре — тот же WorkflowEngine/Job/Verifier/Asset. ВАЖНО: на целевом Colab SaveVideo сломан серверным багом DYNAMICCOMBO_V3 (execute() missing 'format'); требуется обновить ComfyUI + ComfyUI-VideoHelperSuite на Colab (см. HANDOFF/диалог), иначе граф падает на node 8.",
+  "inputs": {
+    "prompt": {"node": "2", "field": "text"},
+    "negative_prompt": {"node": "4", "field": "text"},
+    "width": {"node": "3", "field": "width"},
+    "height": {"node": "3", "field": "height"},
+    "frames": {"node": "3", "field": "batch_size"},
+    "seed": {"node": "5", "field": "seed"},
+    "steps": {"node": "5", "field": "steps"},
+    "fps": {"node": "7", "field": "fps"}
+  },
+  "asset_inputs": {},
+  "outputs": {
+    "result": {"node": "8", "kind": "video"}
+  },
+  "parameters": {
+    "fps": {"default": 4, "min": 1, "max": 30},
+    "frames": {"default": 4, "min": 1, "max": 16},
+    "width": {"default": 512, "min": 64, "max": 1024},
+    "height": {"default": 512, "min": 64, "max": 1024},
+    "seed": {"default": 0, "min": 0, "max": 4294967295},
+    "steps": {"default": 20, "min": 1, "max": 60}
+  },
+  "required_models": ["checkpoint"],
+  "required_custom_nodes": ["CreateVideo", "SaveVideo"],
+  "min_comfyui_version": "0.0.0",
+  "requirements": {"accelerator": "any", "xformers": false, "min_vram_gb": 4, "fp16": true},
+  "limits": {
+    "max_upload_bytes": 209715200,
+    "max_asset_duration": 0,
+    "max_video_width": 0,
+    "max_video_height": 0,
+    "max_sequence_length": 0
+  }
+}

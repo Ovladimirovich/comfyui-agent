@@ -1,0 +1,5 @@
+{
+  "10": {"class_type": "LoadImage", "inputs": {"image": ""}},
+  "20": {"class_type": "ImageScale", "inputs": {"image": ["10", 0], "upscale_method": "lanczos", "width": 1024, "height": 1024, "crop": "disabled"}},
+  "30": {"class_type": "SaveImage", "inputs": {"images": ["20", 0], "filename_prefix": "ComfyUI_upscale"}}
+}

@@ -1,0 +1,29 @@
+{
+  "id": "audio_generate",
+  "version": "1.0.0",
+  "declared_only": false,
+  "capability": "audio.generate",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "note": "M7: text→music через SoniloTextToMusic (cloud API-нода comfy_api_nodes) + SaveAudio. Тот же media-agnostic engine, что у image/video. Ключ ComfyUI-platform передаётся агентом через extra_data промпта (COMFY_API_KEY_COMFY_ORG) — это правка транспорта клиента, ядро WorkflowEngine/Job/Verifier/Asset не затронуто. На Colab должен быть установлен custom_nodes/comfy-api-nodes.",
+  "inputs": {
+    "prompt": { "node": "1", "field": "prompt" },
+    "duration": { "node": "1", "field": "duration" },
+    "seed": { "node": "1", "field": "seed" }
+  },
+  "asset_inputs": {},
+  "outputs": {
+    "result": { "node": "2", "kind": "audio" }
+  },
+  "parameters": {
+    "duration": { "default": 8, "min": 1, "max": 120 },
+    "seed": { "default": 0, "min": 0, "max": 4294967295 }
+  },
+  "required_models": [],
+  "required_custom_nodes": ["SoniloTextToMusic", "SaveAudio"],
+  "min_comfyui_version": "0.0.0",
+  "requirements": { "accelerator": "any", "xformers": false, "min_vram_gb": 4, "fp16": false },
+  "limits": {
+    "max_upload_bytes": 209715200
+  }
+}
