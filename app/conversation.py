@@ -32,7 +32,7 @@ from app.engine.chain import ChainContext, ExecutionChain, ChainState
 from app.engine.history import ExecutionHistory, ExecutionRecord
 from app.engine.job import Job, JobState
 from app.engine.retry import RetryPolicy, classify_error
-from app.planner import PlanContext
+from app.planner import PlanContext, Composer
 
 
 @dataclass
@@ -87,12 +87,14 @@ class ConversationAgent(Agent):
         *args,
         session_manager: Optional[SessionManager] = None,  # M15
         adaptive_planner_enabled: bool = True,  # M16: включить adaptive planning
+        composer: Optional[Composer] = None,  # M19: Intent → Capability Planning
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.sessions: dict[str, ConversationContext] = {}
         self.session_manager = session_manager
         self._adaptive_planner_enabled = adaptive_planner_enabled
+        self.composer = composer
 
     # --- session management (изоляция сессий) ---
 
@@ -158,6 +160,18 @@ class ConversationAgent(Agent):
             decomposer = TaskDecomposer()
             subtasks = decomposer.decompose(request)
             if len(subtasks) > 1:
+                # M19: Validate and enhance via Composer (AD-41)
+                if self.composer is not None:
+                    target = subtasks[-1].capability
+                    composition = self.composer.compose(
+                        target_capability=target,
+                        params=params or {},
+                        available_types=set(),
+                    )
+                    if composition.success:
+                        subtasks = composition.chain
+                    # else: fallback to TaskDecomposer output
+                
                 # MULTI-STEP PATH (M18) — early return
                 return self._execute_chain(
                     session_id=session_id,
