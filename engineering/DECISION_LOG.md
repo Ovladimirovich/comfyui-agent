@@ -48,6 +48,38 @@ Status: PROPOSED | APPROVED
 - **Author/Agent:** architect-review
 - **Status:** APPROVED (зафиксировано в PROJECT_SPEC §24)
 
+## 2026-09-03 — AD-40 (Intent → Capability Planning Direction)
+
+- **Decision ID:** AD-40
+- **Context:** После завершения M18 (Multi-Step Chain) необходимо определить следующий архитектурный скачок в управлении ComfyUI. Рассмотрены два направления: A (Cluster Gateway — управление несколькими ComfyUI instances) и B (Intent-Driven Workflow Composition — автоматическая сборка операций из намерения пользователя).
+- **Decision:**
+  - **Выбрано направление B: Intent → Capability Planning** с архитектурой: `User Intent → Intent Understanding → Capability Planning → Plan/Capability Graph → Primitive Operations → Workflow Composition → ExecutionChain → WorkflowEngine → ComfyUI`
+  - **Workflow Composition собирает ТОЛЬКО из зарегистрированных Capability/Workflow primitives** (из CapabilityRegistry/WorkflowRegistry). Свободная генерация ComfyUI workflow запрещена.
+  - **Cluster Gateway (A) отложен** как следующий инфраструктурный этап после B. Gateway НЕ выбирает capability — только определяет "где выполнить" на основе здоровья/нагрузки backends.
+  - **M19 не начинать** — сначала архитектурное исследование B.
+- **Reason:** M18 уже создал исполнительный механизм для многошаговых задач. Следующий естественный вопрос — научить систему самой выводить необходимые шаги из намерения пользователя, сохраняя CapabilityRegistry/WorkflowRegistry как источник истины. B логически продолжает M18.
+- **Affected components:** Исследование затронет `app/planner/`, `app/registry/`, `app/engine/chain.py`, `docs/PROJECT_SPEC.md`, `docs/17_ROADMAP.md`.
+- **Author/Agent:** architect-review
+- **Status:** APPROVED
+
+## 2026-09-03 — AD-41 (Intent → Capability Planning Architecture)
+
+- **Decision ID:** AD-41
+- **Context:** Архитектурное исследование Intent-Driven Workflow Composition (docs/22_INTENT_CAPABILITY_PLANNING_RESEARCH.md) подтвердило feasibility. Необходимо зафиксировать архитектурные решения для реализации.
+- **Decision:**
+  - **Composer — отдельный класс**, НЕ часть Planner протокола. Planner отвечает за intent → capability, Composer за capability → chain of capabilities.
+  - **Parameter mapping** — начать с identity mapping (params pass-through). Каждый шаг получает params из Planner result.
+  - **Intermediate verification** — опционально, по умолчанию выключено. Включается через `Composer(semantic_verifier=...)`.
+  - **Max chain length** — 5 шагов. Предотвращает composition explosion.
+  - **Alternative paths** — Composer возвращает до 3 вариантов composition. Planner/ConversationAgent выбирает оптимальный на основе history.
+  - **CapabilityGraph** — строится из CapabilityRegistry. Edges определяются media type compatibility (output_A ∈ input_B).
+  - **CompositionResult** — явный тип результата с `success`, `chain`, `alternatives`, `failure_reason`.
+- **Reason:** Чёткое разделение ответственности: Planner (intent → capability), Composer (capability → chain), ExecutionChain (execution). Сохраняет M1-M18 frozen. Минимальная сложность для начала.
+- **Affected components:** Новые модули `app/planner/composer.py`, `app/planner/capability_graph.py`, `app/planner/composition_result.py`. Интеграция с `app/conversation.py`.
+- **Author/Agent:** architect-review
+- **Status:** APPROVED
+
+
 ## 2026-09-01 — AD-33, AD-34 (ComfyCLI Optional Infrastructure Adapter)
 
 - **Decision ID:** AD-33, AD-34
