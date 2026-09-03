@@ -110,9 +110,9 @@ Status: PROPOSED | APPROVED
     - **Routing** (NEW job → choose backend) — может быть автоматическим.
     - **Failover** (UNKNOWN execution state) — НЕ выполняется автоматически. Обязателен reconcile/inspect/recover, чтобы предотвратить duplicate execution (задача отправлена на Remote-1, сгенерировала результат A; повтор на Remote-2 даст результат B — дубль).
 - **Reason:** Исключить риск скрытых дубликатов при неверном автоматическом failover. Обеспечить чистое разделение "intelligence → what, execution → how, resource → where".
-- **Affected components:** Документация design (новый документ), будущие `app/resource/` (после отдельного approval). M1-M19 НЕ затрагиваются.
+- **Affected components:** Новый слой `app/resource/` (Cluster Gateway). M1-M19 frozen, НЕ изменяются. Добавлено поле `backend_execution_identity` в Job/ExecutionRecord (default=None, без нарушения существующих тестов).
 - **Author/Agent:** architect-review
-- **Status:** APPROVED FOR ARCHITECTURAL DESIGN (production-код запрещён до отдельного approval)
+- **Status:** APPROVED FOR IMPLEMENTATION (решение пользователя 2026-09-03)
 
 
 ## 2026-09-01 — AD-33, AD-34 (ComfyCLI Optional Infrastructure Adapter)

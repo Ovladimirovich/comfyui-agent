@@ -36,3 +36,5 @@ class Job:
     error_class: str | None = None  # transient/permanent/verification
     # M18: chain step index for multi-step execution
     chain_step_index: int | None = None
+    # M20/AD-42: backend execution identity (кто физически выполнял задачу)
+    backend_execution_identity: str | None = None

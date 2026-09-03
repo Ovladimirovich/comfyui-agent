@@ -40,6 +40,8 @@ class ExecutionRecord:
     timestamp: float = field(default_factory=time.time)
     # M18: chain step index for multi-step execution
     chain_step_index: int | None = None
+    # M20/AD-42: backend execution identity (кто физически выполнял задачу)
+    backend_execution_identity: str | None = None
 
     @classmethod
     def from_job(
@@ -64,6 +66,7 @@ class ExecutionRecord:
             attempt=attempt,
             output_assets=list(job.output_assets) if job.output_assets else [],
             chain_step_index=getattr(job, 'chain_step_index', None),
+            backend_execution_identity=getattr(job, 'backend_execution_identity', None),
         )
 
     def to_dict(self) -> dict:
