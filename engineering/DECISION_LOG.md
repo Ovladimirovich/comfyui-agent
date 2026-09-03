@@ -79,6 +79,41 @@ Status: PROPOSED | APPROVED
 - **Author/Agent:** architect-review
 - **Status:** APPROVED
 
+## 2026-09-03 — M19 ACCEPTED & FROZEN
+
+- **Decision ID:** M19-STATUS
+- **Context:** M19 (Intent → Capability Planning + Composer integration) прошёл полный цикл: 386 passed, 3 skipped regression; 53 unit/integration tests; 6 real E2E (generate→upscale через Composer на реальном ComfyUI). Asset handoff, lineage, history, chain_step_index, cancellation — все VERIFIED.
+- **Decision:**
+  - **M19 ACCEPTED / VERIFIED / FROZEN.** НЕ трогать без отдельного архитектурного решения.
+  - **Уточнение ответственности:** CapabilityGraph — это knowledge/constraint layer (composability knowledge), которым пользуется Composer, НЕ отдельный execution-stage после Composer. Реальный control flow: `Planner → Composer ↕ CapabilityGraph → Composition → ExecutionChain`. Код уже соответствует (Composer владеет `CapabilityGraph` как полем `self._graph`); обновлена документация.
+- **Reason:** Реально доказан новый контур: User Intent → ConversationAgent → Planner → Composer → CapabilityGraph → ExecutionChain → WorkflowEngine → ComfyUI. M19 добавляет возможность композиции без второго execution path.
+- **Affected components:** `app/planner/composer.py`, `app/planner/capability_graph.py`, `app/conversation.py`, `docs/23_COMPOSER_INTEGRATION_AUDIT.md`.
+- **Author/Agent:** architect-review
+- **Status:** APPROVED & FROZEN
+
+## 2026-09-03 — AD-42 (Cluster Gateway — Architecture Design/Audit, БЕЗ production-кода)
+
+- **Decision ID:** AD-42
+- **Context:** После M19 (Intent → Capability Planning, FROZEN) система имеет полный интеллектуальный контур: User → ConversationAgent → Planner → Composer ↕ CapabilityGraph → ExecutionChain → WorkflowEngine → ComfyUI. Следующий архитектурный слой — Cluster Gateway (Execution Resource Layer). Пользователь явно одобрил только **архитектурный дизайн/аудит**, НЕ написание production-кода. Критически важно: failover/factory для ComfyUI НЕ является автоматически безопасным (риск duplicate execution при disconnect после submission).
+- **Decision:**
+  - **BD: Cluster Gateway APPROVED FOR ARCHITECTURAL DESIGN/AUDIT.** На этом этапе НЕ пишется production-код для Gateway. Сначала — архитектурный дизайн/аудит.
+  - **Разделение ответственности в будущем дизайне:**
+    - **Intelligence layer (ЧТО делать):** Planner, Composer, CapabilityGraph, AdaptivePlanner, SemanticVerifier.
+    - **Execution layer (КАК выполнить):** ExecutionChain, WorkflowEngine, Provider, Backend.
+    - **Resource layer (ГДЕ выполнить):** ClusterGateway — health, load, compatibility, routing, failover.
+  - **Строгие ограничения (15 вопросов обязательны для ответа):**
+    - Gateway НЕ может менять ExecutionPlan — **нет**.
+    - Gateway НЕ может выбирать capability — **нет**.
+    - Gateway НЕ может создавать workflow — **нет**.
+    - Gateway НЕ может обходить WorkflowEngine — **нет**.
+  - **Критическое разделение Routing vs Failover:**
+    - **Routing** (NEW job → choose backend) — может быть автоматическим.
+    - **Failover** (UNKNOWN execution state) — НЕ выполняется автоматически. Обязателен reconcile/inspect/recover, чтобы предотвратить duplicate execution (задача отправлена на Remote-1, сгенерировала результат A; повтор на Remote-2 даст результат B — дубль).
+- **Reason:** Исключить риск скрытых дубликатов при неверном автоматическом failover. Обеспечить чистое разделение "intelligence → what, execution → how, resource → where".
+- **Affected components:** Документация design (новый документ), будущие `app/resource/` (после отдельного approval). M1-M19 НЕ затрагиваются.
+- **Author/Agent:** architect-review
+- **Status:** APPROVED FOR ARCHITECTURAL DESIGN (production-код запрещён до отдельного approval)
+
 
 ## 2026-09-01 — AD-33, AD-34 (ComfyCLI Optional Infrastructure Adapter)
 

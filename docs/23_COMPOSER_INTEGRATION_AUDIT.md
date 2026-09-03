@@ -43,6 +43,15 @@ turn(session_id, capability|request, params, assets, ...)
 - Returns structured CompositionResult with alternatives
 - Supports max chain length constraint
 
+> **Важно (уточнение ответственности, AD-41/M19-STATUS):**
+> `CapabilityGraph` — это **knowledge/constraint layer** (знание о composability), которым пользуется Composer внутри себя (`self._graph`), а не отдельный следующий execution-stage после Composer.
+>
+> Реальный control flow:
+> ```
+> Planner → Composer ↕ CapabilityGraph → Composition → ExecutionChain
+> ```
+> Composer оркестрирует построение композиции, обращаясь к CapabilityGraph как к справочнику. Код уже соответствует (Composer владеет CapabilityGraph как полем `self._graph`).
+
 ---
 
 ## 2. Integration Point
