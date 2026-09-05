@@ -151,3 +151,71 @@ class Verifier:
             diagnostics=diagnostics,
             error_class=error_class,
         )
+
+    def verify_sequence(
+        self,
+        sequence_assets: list[str],
+        expected_count: int | None = None,
+    ) -> VerificationResult:
+        """Детерминированная проверка sequence (M25).
+
+        Проверяет:
+        - sequence не пуста
+        - количество кадров (если expected_count задан)
+        - все Asset IDs существуют
+        - нет дубликатов
+        """
+        diagnostics: list[VerificationDiagnostic] = []
+
+        # 1. Sequence не пуста
+        if not sequence_assets:
+            diagnostics.append(VerificationDiagnostic(
+                output_name="sequence",
+                ok=False,
+                error_message="sequence is empty",
+                error_class="verification",
+            ))
+            return VerificationResult(ok=False, diagnostics=diagnostics, error_class="verification")
+
+        # 2. Количество кадров
+        if expected_count is not None and len(sequence_assets) != expected_count:
+            diagnostics.append(VerificationDiagnostic(
+                output_name="sequence",
+                ok=False,
+                error_message=f"expected {expected_count} assets, got {len(sequence_assets)}",
+                error_class="verification",
+            ))
+
+        # 3. Все Asset IDs существуют
+        missing = []
+        for aid in sequence_assets:
+            if self.store.get(aid) is None:
+                missing.append(aid)
+
+        if missing:
+            diagnostics.append(VerificationDiagnostic(
+                output_name="sequence",
+                ok=False,
+                error_message=f"missing assets: {missing}",
+                error_class="permanent",
+            ))
+
+        # 4. Нет дубликатов
+        if len(sequence_assets) != len(set(sequence_assets)):
+            diagnostics.append(VerificationDiagnostic(
+                output_name="sequence",
+                ok=False,
+                error_message="duplicate assets in sequence",
+                error_class="verification",
+            ))
+
+        ok = all(d.ok for d in diagnostics) if diagnostics else True
+        error_class = None
+        if not ok:
+            error_classes = [d.error_class for d in diagnostics if not d.ok and d.error_class]
+            if "permanent" in error_classes:
+                error_class = "permanent"
+            elif "verification" in error_classes:
+                error_class = "verification"
+
+        return VerificationResult(ok=ok, diagnostics=diagnostics, error_class=error_class)

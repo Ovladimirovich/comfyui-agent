@@ -1,8 +1,9 @@
-"""Engine package (M4+M13+M14+M18): ExecutionPlan, Job, WorkflowEngine, WebSocket, Verifier, History, Retry, SemanticVerification, Chain."""
+"""Engine package (M4+M13+M14+M18+M25): ExecutionPlan, Job, WorkflowEngine, WebSocket, Verifier, History, Retry, SemanticVerification, Chain, Experience."""
 from __future__ import annotations
 
 from .chain import ChainContext, ChainResult, ChainState, ExecutionChain
 from .engine import WorkflowEngine
+from .experience import ChainExperience, ChainStepExperience, ExperienceStore, build_chain_experience
 from .history import ExecutionHistory, ExecutionRecord
 from .job import Job, JobState
 from .plan import ExecutionPlan
@@ -35,4 +36,9 @@ __all__ = [
     "ChainContext",
     "ChainResult",
     "ChainState",
+    # M25
+    "ChainExperience",
+    "ChainStepExperience",
+    "ExperienceStore",
+    "build_chain_experience",
 ]

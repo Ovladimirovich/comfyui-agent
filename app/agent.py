@@ -75,6 +75,9 @@ class Agent:
         retry_policy: Optional[RetryPolicy] = None,  # M13
         semantic_verifier: Optional[SemanticVerifier] = None,  # M14
         adaptive_planner: Optional[Planner] = None,  # M16: context-aware adaptive
+        gateway=None,  # M21: optional ClusterGateway for dispatch tracking
+        reconciler=None,  # M21: optional Reconciler for recovery
+        feedback_store=None,  # M24.1: хранилище feedback для RetryPolicy
     ) -> None:
         self.store = asset_store
         self.model_registry = model_registry
@@ -91,6 +94,11 @@ class Agent:
         self.semantic_verifier = semantic_verifier
         # M16: adaptive planner (context-aware, AD-36)
         self.adaptive_planner = adaptive_planner
+        # M21: Gateway и Reconciler для reconciliation & recovery
+        self.gateway = gateway
+        self.reconciler = reconciler
+        # M24.1: FeedbackStore для failure-time feedback
+        self.feedback_store = feedback_store
 
     # --- discovery (media-agnostic) ---
 
@@ -187,12 +195,21 @@ class Agent:
         provider: Optional[ComfyUIProvider] = None,
         base_url: Optional[str] = None,
         ws_timeout: Optional[int] = None,
+        gateway=None,  # M21
+        history=None,  # M21
     ) -> Job:
-        """Полный media-agnostic путь: capability → Job с output-ассетами."""
+        """Полный media-agnostic путь: capability → Job с output-ассетами.
+
+        M21: gateway и history для dispatch tracking и reconciliation.
+        """
         manifest, plan, provider = self.prepare(
             capability, params, asset_paths, backend_id, provider, base_url
         )
-        return self.engine.execute(manifest, plan, provider=provider, ws_timeout=ws_timeout)
+        return self.engine.execute(
+            manifest, plan, provider=provider, ws_timeout=ws_timeout,
+            gateway=gateway or self.gateway,
+            history=history or self.execution_history,
+        )
 
     # --- natural-language вход (planner) ---
 
@@ -258,6 +275,8 @@ class Agent:
                     provider=provider,
                     base_url=base_url,
                     ws_timeout=ws_timeout,
+                    gateway=self.gateway,  # M21
+                    history=self.execution_history,  # M21
                 )
             except Exception as e:
                 # Ошибка execution — создаём failed Job для diagnostic
@@ -302,29 +321,50 @@ class Agent:
                         job.error = f"semantic verification failed: score={semantic_result.score:.2f}"
                         job.error_class = "verification"
 
-            # Записываем в execution history
+            # Записываем в execution history — M23: corrections_applied
             record = ExecutionRecord.from_job(
                 job,
                 params=current_params,
                 duration=duration,
                 error_class=job.error_class,
                 attempt=attempt,
+                corrections_applied=getattr(last_job, '_applied_corrections', None),
             )
             self.execution_history.record(record)
             last_job = job
 
-            # Решение о retry
+            # Решение о retry — M23: передаём params и semantic_score для корректировки
+            semantic_score = None
+            if semantic_result is not None and not semantic_result.error:
+                semantic_score = semantic_result.score
+
             decision = self.retry_policy.decide(
                 state=job.state.value,
                 attempt=attempt,
                 error_class=job.error_class,
+                current_params=current_params,
+                semantic_score=semantic_score,
+                prompt_id=job.prompt_id,  # M24: для feedback lookup
+                feedback_store=self.feedback_store,  # M24.1: feedback store
             )
+
+            # M23: сохраняем applied corrections для следующей записи
+            applied_corrections = None
+            if decision.param_adjustments:
+                applied_corrections = [{
+                    "error_class": job.error_class,
+                    "from_params": {k: current_params.get(k) for k in decision.param_adjustments},
+                    "to_params": decision.param_adjustments,
+                }]
+            job._applied_corrections = applied_corrections
 
             if decision.action == "accept":
                 return job
             elif decision.action == "retry":
-                # M14: если есть suggested_params — используем их для следующей попытки
-                if (
+                # M23: param_adjustments от стратегии (приоритет) > semantic suggested_params
+                if decision.param_adjustments and attempt < max_attempts:
+                    current_params = {**current_params, **decision.param_adjustments}
+                elif (
                     semantic_result is not None
                     and semantic_result.suggested_params
                     and attempt < max_attempts
@@ -335,10 +375,23 @@ class Agent:
                     import time as _time
                     _time.sleep(decision.delay)
                 continue
-            else:  # failed
+            elif decision.action == "ask_user":  # M24: feedback-driven
+                job._decision_action = "ask_user"
+                job._decision_reason = decision.reason
+                job._decision_suggestions = decision.suggestions
+                return job
+            else:  # failed — M22: обогащаем job контекстом решения
+                job._decision_reason = decision.reason
+                job._decision_suggestions = decision.suggestions
                 return job
 
-        # Все попытки исчерпаны
+        # Все попытки исчерпаны — M22: обогащаем контекстом
+        if last_job is not None and last_job._decision_reason is None:
+            last_job._decision_reason = "all attempts exhausted"
+            last_job._decision_suggestions = [
+                "попробуйте изменить промпт",
+                "уменьшите сложность запроса",
+            ]
         return last_job
 
     # --- входные ассеты (path / base64 / active_asset / reference) ---
@@ -372,7 +425,14 @@ class Agent:
         for role, kind in required_roles.items():
             spec = assets.get(role)
             if spec is not None:
-                out[role] = _resolve_one(spec, role, kind, store, as_ids)
+                # M25: list support для multi-asset roles
+                if isinstance(spec, list):
+                    resolved = []
+                    for item in spec:
+                        resolved.append(_resolve_one(item, role, kind, store, as_ids))
+                    out[role] = resolved
+                else:
+                    out[role] = _resolve_one(spec, role, kind, store, as_ids)
                 continue
             if context is not None and getattr(context, "active_asset", None):
                 active = store.get(context.active_asset) if store else None
@@ -384,7 +444,14 @@ class Agent:
         for role, spec in assets.items():
             if role in out:
                 continue
-            out[role] = _resolve_one(spec, role, required_roles.get(role), store, as_ids)
+            # M25: list support для multi-asset roles
+            if isinstance(spec, list):
+                resolved = []
+                for item in spec:
+                    resolved.append(_resolve_one(item, role, required_roles.get(role), store, as_ids))
+                out[role] = resolved
+            else:
+                out[role] = _resolve_one(spec, role, required_roles.get(role), store, as_ids)
         return out
 
 

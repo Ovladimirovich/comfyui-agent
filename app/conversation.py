@@ -32,6 +32,7 @@ from app.engine.chain import ChainContext, ExecutionChain, ChainState
 from app.engine.history import ExecutionHistory, ExecutionRecord
 from app.engine.job import Job, JobState
 from app.engine.retry import RetryPolicy, classify_error
+from app.engine.verifier import Verifier
 from app.planner import PlanContext, Composer
 
 
@@ -88,6 +89,10 @@ class ConversationAgent(Agent):
         session_manager: Optional[SessionManager] = None,  # M15
         adaptive_planner_enabled: bool = True,  # M16: включить adaptive planning
         composer: Optional[Composer] = None,  # M19: Intent → Capability Planning
+        gateway=None,  # M21: optional ClusterGateway
+        reconciler=None,  # M21: optional Reconciler
+        feedback_store=None,  # M24.1: хранилище feedback для AdaptivePlanner + RetryPolicy
+        experience_store=None,  # M25: хранилище experience для chain completion
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -95,6 +100,13 @@ class ConversationAgent(Agent):
         self.session_manager = session_manager
         self._adaptive_planner_enabled = adaptive_planner_enabled
         self.composer = composer
+        # M21: Gateway и Reconciler для reconciliation & recovery
+        self.gateway = gateway
+        self.reconciler = reconciler
+        # M24.1: FeedbackStore для planning-time и failure-time feedback
+        self.feedback_store = feedback_store
+        # M25: ExperienceStore для фиксации опыта выполнения цепочек
+        self.experience_store = experience_store
 
     # --- session management (изоляция сессий) ---
 
@@ -141,6 +153,7 @@ class ConversationAgent(Agent):
         ws_timeout: Optional[int] = None,
         on_progress=None,
         max_attempts: int = 1,  # M13: количество попыток (1 = без retry)
+        on_chain_step=None,  # M19.3: callback для chain step progress
     ):
         """Один ход диалога: capability/request → Job, с обновлением ConversationContext.
 
@@ -212,6 +225,7 @@ class ConversationAgent(Agent):
                         planner = AdaptivePlanner(
                             history=self.execution_history,
                             fallback=self.planner or _default_planner(),
+                            feedback_store=self.feedback_store,  # M24.1
                         )
 
             result = planner.plan(request, context=plan_ctx)
@@ -273,6 +287,7 @@ class ConversationAgent(Agent):
 
         # 4) M13: retry loop
         last_job = None
+        semantic_result = None  # M14: инициализация для retry decision
         for attempt in range(1, max_attempts + 1):
             start_time = _time.monotonic()
 
@@ -345,6 +360,35 @@ class ConversationAgent(Agent):
             self.execution_history.record(record)
             last_job = job
 
+            # Решение о retry — M23+M24: передаём params, semantic_score, prompt_id
+            semantic_score = None
+            if semantic_result is not None and not semantic_result.error:
+                semantic_score = semantic_result.score
+
+            decision = self.retry_policy.decide(
+                state=job.state.value,
+                attempt=attempt,
+                error_class=job.error_class,
+                current_params=params,
+                semantic_score=semantic_score,
+                prompt_id=job.prompt_id,  # M24: для feedback lookup
+                session_id=session_id,  # M24.1: для feedback lookup
+                feedback_store=self.feedback_store,  # M24.1: feedback store
+            )
+
+            if decision.action == "ask_user":  # M24: feedback-driven
+                job._decision_action = "ask_user"
+                job._decision_reason = decision.reason
+                job._decision_suggestions = decision.suggestions
+                ctx.messages.append({
+                    "type": "feedback_request",
+                    "reason": decision.reason,
+                    "suggestions": decision.suggestions,
+                    "job": job.prompt_id,
+                })
+                ctx.dialog_state = "awaiting_feedback"
+                break
+
             if job.state.value == "SUCCESS":
                 # 5) успех → обновление контекста (active_asset = последний выходной Asset)
                 ctx.active_task = capability
@@ -370,14 +414,10 @@ class ConversationAgent(Agent):
                 ctx.dialog_state = "idle"
                 return job
 
-            # Решение о retry
-            decision = self.retry_policy.decide(
-                state=job.state.value,
-                attempt=attempt,
-                error_class=job.error_class,
-            )
-
             if decision.action == "retry":
+                # M23: применяем param_adjustments
+                if decision.param_adjustments and attempt < max_attempts:
+                    params = {**params, **decision.param_adjustments}
                 # SSE event: retry_started
                 ctx.messages.append({
                     "type": "retry_started",
@@ -390,20 +430,51 @@ class ConversationAgent(Agent):
                 if decision.delay > 0:
                     _time.sleep(decision.delay)
                 continue
+            elif decision.action == "ask_user":  # M24: feedback-driven
+                job._decision_action = "ask_user"
+                job._decision_reason = decision.reason
+                job._decision_suggestions = decision.suggestions
+                ctx.messages.append({
+                    "type": "feedback_request",
+                    "reason": decision.reason,
+                    "suggestions": decision.suggestions,
+                    "job": job.prompt_id,
+                })
+                ctx.dialog_state = "awaiting_feedback"
+                break
             else:
+                # M22: обогащаем job контекстом решения
+                job._decision_reason = decision.reason
+                job._decision_suggestions = decision.suggestions
                 # failed или accept — выходим
                 break
 
         # Все попытки исчерпаны или permanent error
         job = last_job
         if job.state.value != "SUCCESS":
-            ctx.unresolved.append({
+            # M22: обогащаем unresolved контекстом решения
+            unresolved_entry = {
                 "turn": request or capability,
                 "job": job.prompt_id,
                 "state": job.state.value,
                 "attempt": job.attempt,
-            })
+            }
+            if job._decision_reason:
+                unresolved_entry["reason"] = job._decision_reason
+            if job._decision_suggestions:
+                unresolved_entry["suggestions"] = job._decision_suggestions
+            ctx.unresolved.append(unresolved_entry)
             ctx.dialog_state = "error"
+
+            # M22: SSE event decision_failed — контекст для пользователя
+            if job._decision_reason:
+                ctx.messages.append({
+                    "type": "decision_failed",
+                    "reason": job._decision_reason,
+                    "suggestions": job._decision_suggestions or [],
+                    "job": job.prompt_id,
+                    "error_class": job.error_class,
+                })
 
         # SSE event: retry_completed (если были retry)
         if job.attempt > 1:
@@ -434,6 +505,7 @@ class ConversationAgent(Agent):
         ws_timeout: Optional[int] = None,
         on_progress=None,
         max_attempts: int = 1,
+        on_chain_step=None,  # M19.3: callback для chain step progress events
     ) -> Job:
         """Выполнить цепочку подзадач (M18).
 
@@ -443,7 +515,8 @@ class ConversationAgent(Agent):
         from app.planner.decomposer import TaskDecomposer
 
         ctx = self.session(session_id)
-        chain_ctx = ChainContext(session_id=session_id)
+        chain_id = str(_uuid.uuid4())[:12]  # M25: generate chain identifier
+        chain_ctx = ChainContext(session_id=session_id, chain_id=chain_id)
 
         # Если есть явные assets — передаём их в chain_ctx
         if assets:
@@ -472,7 +545,35 @@ class ConversationAgent(Agent):
             ),
         )
 
-        result = chain.execute(subtasks)
+        # M19.3: emit chain_step events for UI progress
+        if on_chain_step is not None:
+            def _emit_step(i: int, step) -> None:
+                if step.state.value in ("completed", "failed"):
+                    on_chain_step({
+                        "type": "chain_step",
+                        "step": i,
+                        "state": step.state.value,
+                        "capability": step.subtask.capability if step.subtask else None,
+                        "outputs": list(step.job.output_assets) if step.job and step.job.output_assets else [],
+                    })
+            # Patch the chain's on_step_complete to also emit events
+            original_callback = chain.on_step_complete
+            def combined_callback(i: int, step) -> None:
+                if original_callback:
+                    original_callback(i, step)
+                _emit_step(i, step)
+            chain.on_step_complete = combined_callback
+
+        result = chain.execute(subtasks, chain_id=chain_id)
+
+        # M25: verify sequence integrity после chain execution
+        sequence_ids = [s.job.output_assets[0] for s in result.steps if s.job and s.job.output_assets]
+        if len(sequence_ids) >= 2:
+            verifier = Verifier(self.store)
+            seq_result = verifier.verify_sequence(sequence_ids)
+            if not seq_result.ok:
+                for d in seq_result.diagnostics:
+                    print(f"[M25 sequence verify] {d.error_message}")
 
         # Обновляем контекст сессии
         if chain_ctx.active_asset:
@@ -480,6 +581,19 @@ class ConversationAgent(Agent):
         if chain_ctx.workflows_used:
             ctx.active_workflow = chain_ctx.workflows_used[-1]
         ctx.dialog_state = "idle" if result.ok else "error"
+
+        # M25: auto-record experience после завершения chain
+        if self.experience_store is not None and chain_ctx.chain_id is not None:
+            from app.engine.experience import build_chain_experience
+            intent = ctx.messages[0].get("turn", "") if ctx.messages else ""
+            exp = build_chain_experience(
+                chain_id=chain_ctx.chain_id,
+                session_id=session_id,
+                history=self.execution_history,
+                context=ctx,
+                intent=intent,
+            )
+            self.experience_store.record(exp)
 
         # Возвращаем Job последнего завершённого шага
         last_step = result.steps[-1] if result.steps else None
@@ -535,6 +649,7 @@ class ConversationAgent(Agent):
                     planner = AdaptivePlanner(
                         history=self.execution_history,
                         fallback=self.planner or _default_planner(),
+                        feedback_store=self.feedback_store,  # M24.1
                     )
 
         result = planner.plan(subtask.description, context=plan_ctx)
@@ -551,10 +666,18 @@ class ConversationAgent(Agent):
         if chain_ctx.active_asset:
             # Определяем role для входного asset
             required_roles = {role: ain.kind for role, ain in manifest.asset_inputs.items()}
-            for role, kind in required_roles.items():
-                if active_asset_obj and active_asset_obj.type == kind:
+            ctx = self.session(chain_ctx.session_id)
+            for role, ain in manifest.asset_inputs.items():
+                if ain.multi:
+                    # M25: multi-asset — собираем все доступные assets этого типа из контекста
+                    matching = [
+                        aid for aid in ctx.assets
+                        if self.store.get(aid) and self.store.get(aid).type == ain.kind
+                    ]
+                    if matching:
+                        input_assets[role] = [{"asset_id": aid} for aid in matching[-ain.max_count:]]
+                elif active_asset_obj and active_asset_obj.type == ain.kind:
                     input_assets[role] = {"asset_id": chain_ctx.active_asset}
-                    break
 
         bindings = self.resolve_asset_inputs(
             input_assets, context=None, store=self.store, as_ids=True,
@@ -597,6 +720,7 @@ class ConversationAgent(Agent):
             # Записываем в messages
             ctx.messages.append({
                 "type": "chain_step",
+                "chain_id": chain_ctx.chain_id,  # M25: group identifier
                 "step": index,
                 "capability": step.subtask.capability,
                 "job": step.job.prompt_id,
@@ -608,3 +732,20 @@ class ConversationAgent(Agent):
 def _default_planner():
     from app.planner import HeuristicPlanner
     return HeuristicPlanner()
+
+
+# --- M21: Reconciliation helpers ---
+
+def reconcile_job(
+    prompt_id: str,
+    reconciler,
+    probe_fn=None,
+) -> tuple:
+    """Reconcile a job after connection loss.
+
+    Returns (state, action, rationale, target_backend).
+    """
+    if reconciler is None:
+        return None, None, "No reconciler configured", None
+    result = reconciler.reconcile(prompt_id, probe_fn=probe_fn)
+    return result.state, result.action, result.rationale, result.target_backend_id

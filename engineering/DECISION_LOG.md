@@ -114,6 +114,20 @@ Status: PROPOSED | APPROVED
 - **Author/Agent:** architect-review
 - **Status:** APPROVED FOR IMPLEMENTATION (решение пользователя 2026-09-03)
 
+## 2026-09-03 — M20 ACCEPTED & FROZEN
+
+- **Decision ID:** M20-STATUS
+- **Context:** M20 (Cluster Gateway, AD-42) реализован как Execution Resource Layer (WHERE). Доказано: Routing, Health-aware selection, Load-aware selection, Capability compatibility, Dispatch tracking, UNKNOWN protection, Safe retry NOT_ACCEPTED. `backend_execution_identity` связывает Job → ExecutionHistory → Gateway.
+- **Decision:**
+  - **M20 ACCEPTED / VERIFIED / FROZEN.** Routing и recovery-decision доказаны.
+  - **Оговорка (важно):** Реальное управление распределённым исполнением при потере связи НЕ доказано (нет fault-injection real E2E). Это нормально — AD-42 разделил Routing и Recovery.
+  - **Следующий этап: M21 — Reconciliation & Recovery.** Цель: submit → backend_execution_identity → connection lost → UNKNOWN → reconcile (COMPLETED→recover / RUNNING→observe / FAILED→record / NOT_ACCEPTED→safe retry / UNKNOWN→STOP). Требует реальный E2E fault-injection, не только unit tests.
+  - **Automatic failover ⛔ пока запрещён** (только после доказанного M21).
+- **Reason:** Gateway должен остаться WHERE-слоем без обратной связи в Intelligence. UNKNOWN-обработка — correctness invariant распределённой системы.
+- **Affected components:** M1-M19 frozen. Новый план `docs/25_M21_RECONCILIATION_RECOVERY.md`.
+- **Author/Agent:** architect-review
+- **Status:** APPROVED & FROZEN
+
 
 ## 2026-09-01 — AD-33, AD-34 (ComfyCLI Optional Infrastructure Adapter)
 

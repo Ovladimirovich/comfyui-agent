@@ -1,0 +1,68 @@
+{
+  "1": {
+    "inputs": { "ckpt_name": "checkpoint" },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": { "title": "Load Checkpoint" }
+  },
+  "2": {
+    "inputs": { "text": "smooth animation, high quality", "clip": ["1", 1] },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Positive)" }
+  },
+  "4": {
+    "inputs": { "text": "blurry, low quality", "clip": ["1", 1] },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Negative)" }
+  },
+  "5": {
+    "inputs": {
+      "seed": 0,
+      "steps": 20,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.6,
+      "model": ["1", 0],
+      "positive": ["2", 0],
+      "negative": ["4", 0],
+      "latent_image": ["12", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler (image-conditioned)" }
+  },
+  "6": {
+    "inputs": { "samples": ["5", 0], "vae": ["1", 2] },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE Decode" }
+  },
+  "7": {
+    "inputs": { "images": ["6", 0], "fps": 4 },
+    "class_type": "CreateVideo",
+    "_meta": { "title": "Create Video" }
+  },
+  "8": {
+    "inputs": {
+      "video": ["7", 0],
+      "filename_prefix": "ComfyUI_video_i2v",
+      "format": "mp4",
+      "codec": "h264"
+    },
+    "class_type": "SaveVideo",
+    "_meta": { "title": "Save Video (MP4)" }
+  },
+  "10": {
+    "inputs": { "image": "input.png" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Image (template — M25 clones per input)" }
+  },
+  "11": {
+    "inputs": { "images": [] },
+    "class_type": "BatchImagesNode",
+    "_meta": { "title": "Batch Images (M25: populated from LoadImage nodes)" }
+  },
+  "12": {
+    "inputs": { "pixels": ["11", 0], "vae": ["1", 2] },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "VAE Encode (batch images → latent)" }
+  }
+}

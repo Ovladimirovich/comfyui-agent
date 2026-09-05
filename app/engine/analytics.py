@@ -3,25 +3,32 @@
 Предоставляет агрегированные метрики для AdaptivePlanner:
 - success_rate (per capability)
 - avg_duration (per capability)
-- preferred_params (per capability)
+- preferred_params (per capability) — с учётом feedback weighting
 - error_patterns (per error_class)
 """
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from app.engine.history import ExecutionHistory, ExecutionRecord
 
+if TYPE_CHECKING:
+    from app.context.feedback import FeedbackStore
+
 
 class HistoryAnalytics:
-    """Расширенная аналитика по ExecutionHistory (M16).
+    """Расширенная аналитика по ExecutionHistory (M16, M19).
 
     Используется AdaptivePlanner для определения "что работало раньше".
+    
+    M19: поддержка feedback weighting — успешные попытки с высоким рейтингом
+   权重 выше при выборе preferred_params.
     """
 
-    def __init__(self, history: ExecutionHistory) -> None:
+    def __init__(self, history: ExecutionHistory, feedback_store: Optional["FeedbackStore"] = None) -> None:
         self.history = history
+        self.feedback_store = feedback_store
 
     def success_rate(self, capability: Optional[str] = None) -> float:
         """Доля успешных попыток (0.0–1.0)."""
@@ -31,15 +38,23 @@ class HistoryAnalytics:
         """Средняя длительность успешных попыток."""
         return self.history.avg_duration(capability)
 
-    def preferred_params(self, capability: str) -> dict:
+    def preferred_params(self, capability: str, feedback_weighted: bool = False) -> dict:
         """Наиболее успешные параметры для capability.
 
+        Args:
+            capability: Capability для анализа
+            feedback_weighted: Если True, учитывает feedback ratings
+        
         Анализирует успешные попытки и возвращает параметры,
         которые чаще всего приводили к успеху.
         """
         successful = self.history.get_successful(capability)
         if not successful:
             return {}
+
+        # M19: filtering by feedback (high-rated attempts only)
+        if feedback_weighted and self.feedback_store is not None:
+            successful = self._filter_by_feedback(successful)
 
         # Подсчитываем частоту параметров в успешных попытках
         param_counter: Counter = Counter()
@@ -60,6 +75,20 @@ class HistoryAnalytics:
                     preferred[key] = values.most_common(1)[0][0]
 
         return preferred
+
+    def _filter_by_feedback(self, records: list[ExecutionRecord]) -> list[ExecutionRecord]:
+        """Фильтровать записи по feedback ratings (только rating >= 4)."""
+        if not self.feedback_store:
+            return records
+        
+        filtered = []
+        for record in records:
+            # Ищем feedback по attempt_id (prompt_id), session не обязателен
+            all_feedback = self.feedback_store.get_all()
+            matching = [f for f in all_feedback if f.attempt_id == record.prompt_id]
+            if not matching or matching[0].rating >= 4:
+                filtered.append(record)
+        return filtered
 
     def error_patterns(self, capability: Optional[str] = None) -> dict:
         """Паттерны ошибок по error_class.

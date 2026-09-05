@@ -64,6 +64,17 @@ class ComfyClient:
             with self._opener.open(req, timeout=self.timeout) as resp:
                 if raw:
                     return resp.read()
+                # Для больших ответов (например /object_info ~1.6MB через туннель)
+                # читаем чанками чтобы избежать IncompleteRead
+                content_length = resp.headers.get("Content-Length")
+                if content_length and int(content_length) > 500000:
+                    chunks = []
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    return json.loads(b"".join(chunks).decode("utf-8"))
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "replace") if e.fp else None

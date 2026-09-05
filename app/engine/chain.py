@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import time as _time
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -35,6 +36,7 @@ class ChainContext:
     Assets остаются в AssetStore (transient state, не persistent).
     """
     session_id: str
+    chain_id: str | None = None  # M25: group identifier for multi-step chains
     active_asset: str | None = None  # ID последнего успешного output asset
     workflows_used: list[str] = field(default_factory=list)  # workflow_id@version для каждого шага
 
@@ -92,14 +94,17 @@ class ExecutionChain:
         self.on_step_complete = on_step_complete
         self._cancelled = False
 
-    def execute(self, subtasks: list[SubTask]) -> ChainResult:
+    def execute(self, subtasks: list[SubTask], chain_id: str | None = None) -> ChainResult:
         """Выполнить цепочку подзадач.
 
         Возвращает ChainResult с результатами всех шагов.
+        chain_id: M25 — внешний идентификатор цепочки (генерируется вызывающим кодом).
         """
         start_time = _time.monotonic()
         steps: list[ChainStep] = []
         self._cancelled = False
+        if chain_id is None:
+            chain_id = str(uuid.uuid4())[:12]  # M25: generate unique chain identifier
 
         for i, subtask in enumerate(subtasks):
             if self._cancelled:
@@ -111,7 +116,7 @@ class ExecutionChain:
                     ))
                 break
 
-            step = self._execute_step(subtask, i)
+            step = self._execute_step(subtask, i, chain_id)
             steps.append(step)
 
             if self.on_step_complete:
@@ -143,7 +148,7 @@ class ExecutionChain:
             failed_steps=failed,
         )
 
-    def _execute_step(self, subtask: SubTask, index: int) -> ChainStep:
+    def _execute_step(self, subtask: SubTask, index: int, chain_id: str | None = None) -> ChainStep:
         """Выполнить один шаг с retry."""
         step = ChainStep(subtask=subtask)
         start_time = _time.monotonic()
@@ -156,6 +161,7 @@ class ExecutionChain:
             try:
                 job = self.execute_fn(subtask)
                 job.chain_step_index = index  # M18: set chain step index
+                job.chain_id = chain_id  # M25: stamp chain identifier
                 step.job = job
                 step.duration = _time.monotonic() - start_time
 
@@ -172,6 +178,7 @@ class ExecutionChain:
                     attempt=attempt,
                     chain_step_index=index,
                     output_assets=list(job.output_assets) if hasattr(job, 'output_assets') else [],
+                    chain_id=chain_id,
                 )
                 self.history.record(record)
 

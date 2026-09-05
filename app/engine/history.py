@@ -2,6 +2,7 @@
 
 ExecutionRecord — одна попытка выполнения (один POST /prompt).
 ExecutionHistory — in-memory коллекция записей с JSONL persistence.
+M21: dispatch tracking для Reconciliation & Recovery.
 
 Usage:
     history = ExecutionHistory()
@@ -15,7 +16,10 @@ import json
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from app.resource.models import ExecutionDispatchRecord
 
 
 @dataclass
@@ -42,6 +46,10 @@ class ExecutionRecord:
     chain_step_index: int | None = None
     # M20/AD-42: backend execution identity (кто физически выполнял задачу)
     backend_execution_identity: str | None = None
+    # M23: какие стратегии корректировки были применены
+    corrections_applied: list[dict] | None = None  # [{strategy, from_params, to_params}]
+    # M25: group identifier for multi-step chains
+    chain_id: str | None = None
 
     @classmethod
     def from_job(
@@ -51,6 +59,7 @@ class ExecutionRecord:
         duration: float = 0.0,
         error_class: str | None = None,
         attempt: int = 1,
+        corrections_applied: list[dict] | None = None,  # M23
     ) -> ExecutionRecord:
         """Создать ExecutionRecord из Job объекта."""
         return cls(
@@ -67,6 +76,8 @@ class ExecutionRecord:
             output_assets=list(job.output_assets) if job.output_assets else [],
             chain_step_index=getattr(job, 'chain_step_index', None),
             backend_execution_identity=getattr(job, 'backend_execution_identity', None),
+            corrections_applied=corrections_applied,
+            chain_id=getattr(job, 'chain_id', None),
         )
 
     def to_dict(self) -> dict:
@@ -88,8 +99,10 @@ class ExecutionHistory:
     def __init__(self, persist_path: str | None = None) -> None:
         self._records: list[ExecutionRecord] = []
         self._persist_path = persist_path
+        self._dispatch_records: dict[str, dict] = {}  # M21: dispatch tracking
         if persist_path and os.path.exists(persist_path):
             self._load()
+            self._load_dispatches()  # M21: load dispatch records
 
     def record(self, rec: ExecutionRecord) -> None:
         """Добавить запись в историю."""
@@ -153,6 +166,98 @@ class ExecutionHistory:
     def clear(self) -> None:
         """Очистить историю (для тестов)."""
         self._records.clear()
+
+    # --- M25: Chain-level queries ---
+
+    def get_by_chain(self, chain_id: str) -> list[ExecutionRecord]:
+        """Все записи одной цепочки, упорядоченные по chain_step_index и timestamp."""
+        return sorted(
+            [r for r in self._records if r.chain_id == chain_id],
+            key=lambda r: (r.chain_step_index or 0, r.timestamp),
+        )
+
+    def get_chain_summary(self, chain_id: str) -> dict:
+        """Агрегированная статистика по цепочке."""
+        records = self.get_by_chain(chain_id)
+        if not records:
+            return {"chain_id": chain_id, "total_steps": 0}
+        successful = [r for r in records if r.state == "SUCCESS"]
+        return {
+            "chain_id": chain_id,
+            "total_steps": len(records),
+            "completed_steps": len(successful),
+            "failed_steps": len(records) - len(successful),
+            "capabilities": list({r.capability for r in records}),
+            "total_duration": sum(r.duration for r in records),
+            "workflows": list({f"{r.workflow_id}@{r.workflow_version}" for r in records if r.workflow_id}),
+        }
+
+    # --- M21: Dispatch tracking for Reconciliation ---
+
+    def record_dispatch(
+        self,
+        prompt_id: str,
+        backend_id: str,
+        endpoint_url: str = "",
+    ) -> None:
+        """Записать факт диспетчеризации задачи на backend.
+
+        M21: Dispatch record хранится отдельно от ExecutionRecord,
+        но сохраняется в тот же JSONL файл (если persist_path задан).
+        """
+        self._dispatch_records[prompt_id] = {
+            "prompt_id": prompt_id,
+            "backend_id": backend_id,
+            "endpoint_url": endpoint_url,
+            "submitted_at": time.time(),
+        }
+        if self._persist_path:
+            self._append_dispatch_jsonl(prompt_id, backend_id, endpoint_url)
+
+    def get_dispatch(self, prompt_id: str) -> dict | None:
+        """Получить запись о диспетчеризации по prompt_id."""
+        return self._dispatch_records.get(prompt_id)
+
+    def get_dispatches_by_backend(self, backend_id: str) -> list[dict]:
+        """Получить все dispatch записи для backend."""
+        return [
+            d for d in self._dispatch_records.values()
+            if d["backend_id"] == backend_id
+        ]
+
+    def _append_dispatch_jsonl(
+        self, prompt_id: str, backend_id: str, endpoint_url: str
+    ) -> None:
+        """Дописать dispatch запись в JSONL файл."""
+        # Dispatch сохраняется в тот же файл, что и history
+        if not self._persist_path:
+            return
+        with open(self._persist_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "_dispatch": True,
+                "prompt_id": prompt_id,
+                "backend_id": backend_id,
+                "endpoint_url": endpoint_url,
+                "submitted_at": time.time(),
+            }, ensure_ascii=False) + "\n")
+
+    def _load_dispatches(self) -> None:
+        """Загрузить dispatch записи из JSONL файла."""
+        if not self._persist_path:
+            return
+        if not os.path.exists(self._persist_path):
+            return
+        with open(self._persist_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        d = json.loads(line)
+                        # Dispatch records have "_dispatch": True marker
+                        if d.get("_dispatch"):
+                            self._dispatch_records[d["prompt_id"]] = d
+                    except (json.JSONDecodeError, TypeError, KeyError):
+                        continue
 
     def _append_jsonl(self, rec: ExecutionRecord) -> None:
         """Дописать запись в JSONL файл."""

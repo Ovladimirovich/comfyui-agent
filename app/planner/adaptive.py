@@ -1,6 +1,6 @@
 """AdaptivePlanner — контекстно-осведомлённый планировщик, учится на предыдущих результатах.
 
-Использует ExecutionHistory + UserPreferences для оптимизации параметров.
+Использует ExecutionHistory + UserPreferences + FeedbackStore для оптимизации параметров.
 Fallback на HeuristicPlanner при недостаточной истории.
 
 AD-36: порог ≥ 3 считается по конкретной capability, не глобально.
@@ -14,6 +14,11 @@ from app.engine.analytics import HistoryAnalytics
 from app.engine.history import ExecutionHistory
 from app.planner import HeuristicPlanner, PlanContext, PlanResult, Planner
 from app.planner.preferences import UserPreferences
+
+try:
+    from app.context.feedback import FeedbackStore
+except ImportError:
+    FeedbackStore = None  # type: ignore
 
 
 # Минимальное количество успешных попыток для конкретной capability
@@ -38,9 +43,11 @@ class AdaptivePlanner:
         self,
         history: ExecutionHistory,
         fallback: Optional[Planner] = None,
+        feedback_store: Optional["FeedbackStore"] = None,
     ) -> None:
         self.history = history
-        self.analytics = HistoryAnalytics(history)
+        self.feedback_store = feedback_store
+        self.analytics = HistoryAnalytics(history, feedback_store=feedback_store)
         self.preferences = UserPreferences(self.analytics)
         self.fallback = fallback or HeuristicPlanner()
 
@@ -103,6 +110,7 @@ class AdaptivePlanner:
         2) Если история < 3 для capability — возвращаем fallback result
         3) Если история >= 3 — корректирует params через context-aware preferences
         4) User explicit params (из request) > learned preferences
+        5) M19: если есть feedback — используем feedback-weighted analytics
         """
         # 1) Базовое планирование (capability + params)
         base_result = self.fallback.plan(request, context)
@@ -118,19 +126,34 @@ class AdaptivePlanner:
         if not preferred:
             return base_result
 
-        # 4) Мержим: preferred params как дефолты, explicit из request перезаписывают
+        # 4) M19: feedback weighting
+        if self.feedback_store is not None:
+            preferred = self._feedback_weighted_params(
+                base_result.capability, context
+            ) or preferred
+
+        # 5) Мержим: preferred params как дефолты, explicit из request перезаписывают
         merged_params = {**preferred, **base_result.params}
 
-        # 5) Не перезаписываем explicit prompt из request
+        # 6) Не перезаписываем explicit prompt из request
         if "prompt" in base_result.params:
             merged_params["prompt"] = base_result.params["prompt"]
 
         success_count = len(self.history.get_successful(base_result.capability))
+        feedback_info = " + feedback-weighted" if self.feedback_store else ""
         return PlanResult(
             capability=base_result.capability,
             params=merged_params,
             rationale=(
                 f"adaptive: preferred params from {success_count} "
-                f"successful {base_result.capability} records"
+                f"successful {base_result.capability} records{feedback_info}"
             ),
         )
+
+    def _feedback_weighted_params(
+        self, capability: str, context: Optional[PlanContext]
+    ) -> dict:
+        """Получить preferred params с учётом feedback (M19)."""
+        if self.feedback_store is None:
+            return {}
+        return self.analytics.preferred_params(capability, feedback_weighted=True)

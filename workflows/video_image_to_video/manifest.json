@@ -1,0 +1,43 @@
+{
+  "id": "video_image_to_video",
+  "version": "1.0.0",
+  "capability": "video.image_to_video",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "note": "M25: multi-image to video workflow. Accepts N images via LoadImage nodes, batches them via ImageBatch, encodes with VAEEncode, generates video frames with KSampler, decodes with VAEDecode, assembles with CreateVideo + SaveVideo.",
+  "inputs": {
+    "prompt": {"node": "2", "field": "text"},
+    "negative_prompt": {"node": "4", "field": "text"},
+    "fps": {"node": "7", "field": "fps"},
+    "steps": {"node": "5", "field": "steps"},
+    "seed": {"node": "5", "field": "seed"}
+  },
+  "asset_inputs": {
+    "images": {
+      "node": "10",
+      "field": "image",
+      "kind": "image",
+      "multi": true,
+      "max_count": 16,
+      "load_node_template": "10",
+      "batch_node": "11",
+      "batch_field": "images"
+    }
+  },
+  "outputs": {
+    "result": {"node": "8", "kind": "video"}
+  },
+  "parameters": {
+    "fps": {"default": 4, "min": 1, "max": 30},
+    "steps": {"default": 20, "min": 1, "max": 60},
+    "seed": {"default": 0, "min": 0, "max": 4294967295}
+  },
+  "required_models": ["checkpoint"],
+  "required_custom_nodes": ["CreateVideo", "SaveVideo", "LoadImageBatch"],
+  "min_comfyui_version": "0.0.0",
+  "requirements": {"accelerator": "any", "xformers": false, "min_vram_gb": 4, "fp16": true},
+  "limits": {
+    "max_upload_bytes": 209715200,
+    "max_sequence_length": 16
+  }
+}

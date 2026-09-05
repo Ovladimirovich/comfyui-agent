@@ -75,21 +75,18 @@ class ClusterGateway:
     # --- health / load / state ---
 
     def refresh_health(self) -> None:
-        """Обновить health/load/state для всех backends."""
+        """Обновить health/load/state для всех backends.
+
+        Если health_check_fn не задан — оставляем текущее health без изменений.
+        """
         for backend in self._backends.values():
             # Health
             if self._health_check_fn is not None:
                 health = self._health_check_fn(backend)
                 backend.health = health if health is not None else BackendHealth.UNKNOWN
-            else:
-                backend.health = BackendHealth.UNKNOWN
-
-            # Queue depth
+            # queue_depth update (если функция задана)
             if self._queue_depth_fn is not None:
                 backend.queue_depth = self._queue_depth_fn(backend)
-            else:
-                backend.queue_depth = 0
-
             # Compute resource state
             backend.state = self._compute_resource_state(backend)
 

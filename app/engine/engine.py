@@ -95,12 +95,62 @@ class WorkflowEngine:
         # входные ассеты (через Provider/Backend boundary, уже загружены)
         for role, bind in manifest.asset_inputs.items():
             ref = asset_refs.get(role)
-            if ref is not None:
-                _set_field(prompt, bind.node, bind.field, ref.reference["filename"])
+            if ref is None:
+                continue
+            if bind.multi and isinstance(ref, list):
+                # M25: multi-asset — создаём N load nodes + batch connection
+                self._build_multi_asset_input(prompt, bind, ref)
+            else:
+                # single-asset — существующее поведение
+                single_ref = ref[0] if isinstance(ref, list) else ref
+                _set_field(prompt, bind.node, bind.field, single_ref.reference["filename"])
 
         return prompt
 
     # --- runtime model binding (per-backend, точное имя модели) -----------
+
+    def _build_multi_asset_input(self, prompt: dict, bind, refs: list) -> None:
+        """Собрать multi-asset input: N load nodes → batch node.
+
+        Для BatchImagesNode (COMFY_AUTOGROW_V3) используется формат:
+          {"image0": [node_id, 0], "image1": [node_id, 0], ...}
+        Для старых ImageBatch — список ссылок:
+          {"images": [[node_id, 0], ...]}
+        """
+        # Находим template node для копирования
+        template_node_id = str(bind.load_node_template) if bind.load_node_template else str(bind.node)
+        template_node = prompt.get(template_node_id)
+        if template_node is None:
+            raise ValueError(f"load_node_template '{template_node_id}' не найден в prompt")
+
+        # Для каждого ref создаём отдельный load node
+        load_node_ids = []
+        for i, ref in enumerate(refs):
+            node_id = f"{template_node_id}_m25_{i}"
+            new_node = copy.deepcopy(template_node)
+            new_node.setdefault("inputs", {})["image"] = ref.reference["filename"]
+            prompt[node_id] = new_node
+            load_node_ids.append(node_id)
+
+        # Подключаем все load nodes к batch node
+        batch_node_id = str(bind.batch_node) if bind.batch_node else None
+        if batch_node_id is not None:
+            batch_node = prompt.get(batch_node_id)
+            if batch_node is not None:
+                inputs = batch_node.setdefault("inputs", {})
+                # Проверяем тип batch node по его class_type
+                class_type = batch_node.get("class_type", "")
+                if class_type == "BatchImagesNode":
+                    # COMFY_AUTOGROW_V3: image0, image1, ...
+                    for i, nid in enumerate(load_node_ids):
+                        inputs[f"image{i}"] = [nid, 0]
+                    # Убираем пустое images если осталось
+                    inputs.pop("images", None)
+                else:
+                    # Старый формат: images = [[node, idx], ...]
+                    inputs[bind.batch_field] = [
+                        [nid, 0] for nid in load_node_ids
+                    ]
 
     def _bind_models(self, prompt: dict, provider) -> None:
         if self.model_registry is not None:
@@ -171,17 +221,34 @@ class WorkflowEngine:
                 raise RuntimeError(f"output {kind}: несовпадение сигнатуры")
 
     def execute(self, manifest: Workflow, plan, provider, ws_timeout: int | None = None,
-                on_progress=None) -> Job:
-        """Запустить execution. on_progress(value, max) — callback для WS progress events."""
+                on_progress=None,
+                gateway=None,  # M21: optional ClusterGateway for dispatch tracking
+                history=None,  # M21: optional ExecutionHistory for dispatch persistence
+    ) -> Job:
+        """Запустить execution. on_progress(value, max) — callback для WS progress events.
+
+        M21: gateway历史记录 backend_execution_identity + dispatch tracking.
+        """
         # 1. транспорт входных ассетов через Provider boundary
         asset_refs: dict = {}
         source_asset_ids: list = []
         for role, asset_id in plan.asset_bindings.items():
-            asset = self.store.get(asset_id)
-            if asset is None:
-                raise ValueError(f"asset {asset_id} не найден для binding '{role}'")
-            asset_refs[role] = provider.upload_asset(asset)
-            source_asset_ids.append(asset_id)
+            # M25: поддержка list[str] для multi-asset roles
+            if isinstance(asset_id, list):
+                refs = []
+                for aid in asset_id:
+                    asset = self.store.get(aid)
+                    if asset is None:
+                        raise ValueError(f"asset {aid} не найден для binding '{role}'")
+                    refs.append(provider.upload_asset(asset))
+                    source_asset_ids.append(aid)
+                asset_refs[role] = refs
+            else:
+                asset = self.store.get(asset_id)
+                if asset is None:
+                    raise ValueError(f"asset {asset_id} не найден для binding '{role}'")
+                asset_refs[role] = provider.upload_asset(asset)
+                source_asset_ids.append(asset_id)
 
         # 2. сборка prompt
         prompt = self.build_prompt(manifest, plan, asset_refs)
@@ -198,7 +265,14 @@ class WorkflowEngine:
             version=plan.version,
             capability=plan.capability,
             state=JobState.RUNNING,
+            backend_execution_identity=provider.backend_id,  # M21: set backend identity
         )
+
+        # M21: Record dispatch to Gateway if provided
+        if gateway is not None:
+            gateway.record_dispatch(prompt_id, provider.backend_id)
+        if history is not None:
+            history.record_dispatch(prompt_id, provider.backend_id, provider.client.base_url)
 
         # 5. трекинг через WebSocket (обязателен, треб. 6)
         lock = threading.Lock()

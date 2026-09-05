@@ -69,6 +69,12 @@ class AssetInput:
     node: str
     field: str
     kind: str
+    # M25: batch/multi support
+    multi: bool = False
+    max_count: int = 1
+    load_node_template: str | None = None  # node ID template for each load node
+    batch_node: str | None = None          # ImageBatch/concat node ID
+    batch_field: str | None = None         # field name in batch node
 
 
 @dataclass
@@ -163,6 +169,18 @@ def validate_manifest(data: dict, capabilities: Optional[CapabilityRegistry] = N
         raise ManifestError("manifest.asset_inputs должен быть объектом", [UnavailableReason.INVALID_MANIFEST])
     for name, val in asset_inputs.items():
         _check_node_binding(val, f"asset_inputs.{name}", require_kind=True)
+        # M25: validate multi fields if present
+        if val.get("multi"):
+            if not val.get("batch_node"):
+                raise ManifestError(
+                    f"asset_inputs.{name}: multi=true требует batch_node",
+                    [UnavailableReason.INVALID_MANIFEST],
+                )
+            if not val.get("batch_field"):
+                raise ManifestError(
+                    f"asset_inputs.{name}: multi=true требует batch_field",
+                    [UnavailableReason.INVALID_MANIFEST],
+                )
 
     # outputs (требует node + kind, БЕЗ field — docs/06)
     outputs = data.get("outputs", {})
@@ -279,7 +297,19 @@ def load_workflow(manifest_path: str | os.PathLike, capabilities: Optional[Capab
         provider=data["provider"],
         backend=data.get("backend", ""),
         inputs={k: NodeBinding(str(v["node"]), v["field"]) for k, v in data.get("inputs", {}).items()},
-        asset_inputs={k: AssetInput(str(v["node"]), v["field"], v["kind"]) for k, v in data.get("asset_inputs", {}).items()},
+        asset_inputs={
+            k: AssetInput(
+                node=str(v["node"]),
+                field=v["field"],
+                kind=v["kind"],
+                multi=v.get("multi", False),
+                max_count=v.get("max_count", 1),
+                load_node_template=v.get("load_node_template"),
+                batch_node=v.get("batch_node"),
+                batch_field=v.get("batch_field"),
+            )
+            for k, v in data.get("asset_inputs", {}).items()
+        },
         outputs={k: OutputSpec(str(v["node"]), v["kind"]) for k, v in data.get("outputs", {}).items()},
         parameters=data.get("parameters", {}),
         required_models=list(data.get("required_models", [])),

@@ -36,5 +36,11 @@ class Job:
     error_class: str | None = None  # transient/permanent/verification
     # M18: chain step index for multi-step execution
     chain_step_index: int | None = None
+    # M25: group identifier for multi-step chains
+    chain_id: str | None = None
     # M20/AD-42: backend execution identity (кто физически выполнял задачу)
     backend_execution_identity: str | None = None
+    # M22: enriched failure context (от RetryDecision)
+    _decision_reason: str | None = None
+    _decision_suggestions: list[str] | None = None
+    _decision_action: str | None = None  # M24: "ask_user" | None

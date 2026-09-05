@@ -30,6 +30,7 @@ from app.agent import _build_provider
 from app.assets import AssetStore
 from app.conversation import ConversationAgent, ConversationContext
 from app.context.feedback import FeedbackRecord, FeedbackStore
+from app.engine.experience import ExperienceStore
 from app.prompt import CompositePromptBuilder, HeuristicPromptBuilder, PromptContext
 
 
@@ -81,7 +82,19 @@ class ComfyUIServer:
         prompt_builder=None,  # M12: CompositePromptBuilder (default) or custom
     ) -> None:
         self.store = store
-        self.agent = agent or ConversationAgent(store)
+        # M17/M24.1: feedback store — используем существующий у агента или создаём новый
+        self.feedback_store = getattr(agent, "feedback_store", None) or FeedbackStore()
+        # M25: experience store — хранит ChainExperience после завершения цепочек
+        self.experience_store = getattr(agent, "experience_store", None) or ExperienceStore()
+        self.agent = agent or ConversationAgent(
+            store,
+            feedback_store=self.feedback_store,
+            experience_store=self.experience_store,
+        )
+        # M24.1: guarantee agent.feedback_store == self.feedback_store
+        self.agent.feedback_store = self.feedback_store
+        # M25: guarantee agent.experience_store == self.experience_store
+        self.agent.experience_store = self.experience_store
         self.provider = provider
         # M12: default to CompositePromptBuilder (LLM fallback to heuristic)
         if prompt_builder is None:
@@ -95,8 +108,6 @@ class ComfyUIServer:
         self.prompt_builder = prompt_builder
         self.streams: dict[str, SessionStream] = {}
         self._lock = threading.Lock()
-        # M17: feedback store
-        self.feedback_store = FeedbackStore()
 
     def stream(self, session_id: str) -> SessionStream:
         with self._lock:
@@ -284,13 +295,18 @@ es.addEventListener('progress', (e) => {
   setStatus('выполняется… ' + d.pct + '%');
 });
 es.addEventListener('result', (e) => {
-  const d = JSON.parse(e.data);
-  setStatus('готово: ' + d.state);
-  progressWrap.style.display = 'none';
-  progressBar.style.width = '0%';
-  addMsg('✓ ' + d.active_workflow + ' → ' + d.active_asset, 'bot');
-  if (d.preview) showPreview(d.preview);
-});
+   const d = JSON.parse(e.data);
+   setStatus('готово: ' + d.state);
+   progressWrap.style.display = 'none';
+   progressBar.style.width = '0%';
+   addMsg('✓ ' + d.active_workflow + ' → ' + d.active_asset, 'bot');
+   if (d.preview) showPreview(d.preview);
+ });
+ es.addEventListener('chain_step', (e) => {
+   const d = JSON.parse(e.data);
+   const stepLabel = d.step + 1 + '/' + (d.total_steps || '?') + ': ' + (d.capability || '');
+   addMsg('🔄 ' + stepLabel + ' [' + d.state + ']', 'sys');
+ });
 es.addEventListener('error', (e) => {
   let msg = 'ошибка';
   try { msg = JSON.parse(e.data).error; } catch (_) {}
@@ -511,7 +527,14 @@ def build_server(host: str = "127.0.0.1", port: int = 0, store: Optional[AssetSt
     if store is None:
         root = os.environ.get("AGENT_ASSET_DIR")
         store = AssetStore(root=root)
-    agent = ConversationAgent(store, backends=BackendCatalog.from_env())
+    fb_store = FeedbackStore()
+    exp_store = ExperienceStore()
+    agent = ConversationAgent(
+        store,
+        backends=BackendCatalog.from_env(),
+        feedback_store=fb_store,
+        experience_store=exp_store,
+    )
     factory = ComfyUIServer(store, agent=agent)
     handler = _make_handler(factory)
     httpd = ThreadingHTTPServer((host, port), handler)

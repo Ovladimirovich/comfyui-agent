@@ -183,3 +183,72 @@ class TestSessionManager:
             # s2 не должен содержать сообщения из s1
             ctx2 = manager.resume("s2")
             assert ctx2.messages == []
+
+
+class TestPersistenceRestart:
+    """M19.2: тесты persistence restart (save → restart → resume)."""
+
+    def test_restart_preserves_chain_state(self, tmp_path):
+        """Состояние после chain сохраняется при рестарте."""
+        from app.conversation import ConversationContext
+        from app.context.persistence import ContextPersistence
+        from app.context.session_manager import SessionManager
+
+        persistence = ContextPersistence(sessions_dir=str(tmp_path / "sessions"))
+        manager = SessionManager(persistence=persistence)
+
+        # Создаём сессию и симулируем chain
+        sid = manager.create("chain-session")
+        ctx = manager.resume(sid)
+        assert ctx is not None
+
+        # Симулируем aftermath of a chain: generate → upscale
+        ctx.active_asset = "asset_b_after_upscale"
+        ctx.assets = {"asset_a_from_generate", "asset_b_from_upscale"}
+        ctx.workflows = {"txt2img@1.0.0", "upscale@1.0.0"}
+        ctx.messages = [
+            {"type": "chain_step", "step": 0, "capability": "image.generate"},
+            {"type": "chain_step", "step": 1, "capability": "image.upscale"},
+        ]
+        ctx.dialog_state = "idle"
+        manager.save(sid, ctx)
+
+        # Restart: создаём новый SessionManager (симуляция рестарта)
+        persistence2 = ContextPersistence(sessions_dir=str(tmp_path / "sessions"))
+        manager2 = SessionManager(persistence=persistence2)
+        ctx_restored = manager2.resume(sid)
+
+        assert ctx_restored is not None
+        assert ctx_restored.active_asset == "asset_b_after_upscale"
+        assert ctx_restored.assets == {"asset_a_from_generate", "asset_b_from_upscale"}
+        assert ctx_restored.workflows == {"txt2img@1.0.0", "upscale@1.0.0"}
+        assert len(ctx_restored.messages) == 2
+        assert ctx_restored.dialog_state == "idle"
+
+    def test_restart_preserves_messages(self, tmp_path):
+        """Сообщения сохраняются при рестарте."""
+        from app.conversation import ConversationContext
+        from app.context.persistence import ContextPersistence
+        from app.context.session_manager import SessionManager
+
+        persistence = ContextPersistence(sessions_dir=str(tmp_path / "sessions"))
+        manager = SessionManager(persistence=persistence)
+        sid = manager.create("msg-session")
+
+        ctx = manager.resume(sid)
+        ctx.messages = [
+            {"type": "user", "text": "hello"},
+            {"type": "bot", "text": "hi"},
+            {"type": "chain_step", "step": 0, "capability": "image.generate"},
+        ]
+        manager.save(sid, ctx)
+
+        # Restart
+        persistence2 = ContextPersistence(sessions_dir=str(tmp_path / "sessions"))
+        manager2 = SessionManager(persistence=persistence2)
+        ctx_restored = manager2.resume(sid)
+
+        assert ctx_restored is not None
+        assert len(ctx_restored.messages) == 3
+        assert ctx_restored.messages[0]["type"] == "user"
+        assert ctx_restored.messages[2]["type"] == "chain_step"

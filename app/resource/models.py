@@ -71,11 +71,21 @@ class BackendResource:
     @property
     def is_selectable(self) -> bool:
         """Только HEALTHY/DEGRADED backend может быть выбран для NEW job (MD-02).
-        
+
         UNKNOWN и UNHEALTHY исключаются.
         BUSY — всё ещё selectable (но ниже по приоритету при routing).
         """
         return self.state in (BackendResourceState.AVAILABLE, BackendResourceState.BUSY)
+
+    def update_state(self, health: BackendHealth, queue_depth: int = 0) -> None:
+        """Обновить state на основе health и queue_depth.
+
+        Вызывается Gateway.refresh_health() для синхронизации состояния.
+        """
+        self.health = health
+        self.queue_depth = queue_depth
+        from app.resource.gateway import ClusterGateway
+        self.state = ClusterGateway._compute_resource_state(self)
 
 
 @dataclass
