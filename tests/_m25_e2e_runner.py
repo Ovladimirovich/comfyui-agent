@@ -213,25 +213,35 @@ def run_e2e(tmp_path: Path):
     print("Step 2: video.image_to_video (images=[Asset1, Asset2])")
     print("-" * 70)
     t2 = time.time()
-    j2 = agent.turn(
-        "s1",
-        capability="video.image_to_video",
-        params={
-            "prompt": PROMPT_STEP2,
-            "negative_prompt": "blurry, low quality, distorted",
-            "fps": 4,
-            "steps": 20,
-            "seed": 44,
-        },
-        assets={
-            "images": [
-                {"asset_id": asset1_id},
-                {"asset_id": asset2_id},
-            ]
-        },
-        provider=provider,
-        ws_timeout=600,
-    )
+    try:
+        j2 = agent.turn(
+            "s1",
+            capability="video.image_to_video",
+            params={
+                "prompt": PROMPT_STEP2,
+                "negative_prompt": "blurry, low quality, distorted",
+                "fps": 4,
+                "steps": 20,
+                "seed": 44,
+            },
+            assets={
+                "images": [
+                    {"asset_id": asset1_id},
+                    {"asset_id": asset2_id},
+                ]
+            },
+            provider=provider,
+            ws_timeout=600,
+        )
+    except Exception as e:
+        print(f"  EXCEPTION: {type(e).__name__}: {e}")
+        if hasattr(e, 'body') and e.body:
+            print(f"  RESPONSE BODY: {e.body[:2000]}")
+        if hasattr(e, 'status'):
+            print(f"  STATUS: {e.status}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
     elapsed2 = time.time() - t2
     print(f"  Job: {j2.prompt_id}")
     print(f"  State: {j2.state.value}")
