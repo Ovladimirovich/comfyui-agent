@@ -123,26 +123,37 @@ def run_e2e(tmp_path: Path):
     print("Step 0: image.generate")
     print("-" * 70)
     t0 = time.time()
-    j0 = agent.turn(
-        "s1",
-        capability="image.generate",
-        params={
-            "prompt": PROMPT_STEP0,
-            "negative_prompt": "",
-            "width": 512,
-            "height": 512,
-            "seed": 42,
-            "steps": 20,
-        },
-        provider=provider,
-        ws_timeout=360,
-    )
+    try:
+        j0 = agent.turn(
+            "s1",
+            capability="image.generate",
+            params={
+                "prompt": PROMPT_STEP0,
+                "negative_prompt": "",
+                "width": 512,
+                "height": 512,
+                "seed": 42,
+                "steps": 20,
+            },
+            provider=provider,
+            ws_timeout=360,
+        )
+    except Exception as e:
+        print(f"  EXCEPTION: {type(e).__name__}: {e}")
+        if hasattr(e, 'body') and e.body:
+            print(f"  RESPONSE BODY: {e.body[:1000]}")
+        if hasattr(e, 'status'):
+            print(f"  STATUS: {e.status}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
     elapsed0 = time.time() - t0
     print(f"  Job: {j0.prompt_id}")
     print(f"  State: {j0.state.value}")
     print(f"  Time: {elapsed0:.1f}s")
 
     if j0.state != JobState.SUCCESS:
+        print(f"  ERROR: {j0.error}")
         return {"error": f"Step 0 FAILED: {j0.error}", "job": j0}
 
     asset1_id = j0.output_assets[0]
