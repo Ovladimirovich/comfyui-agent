@@ -141,11 +141,13 @@ class WorkflowEngine:
                 # Проверяем тип batch node по его class_type
                 class_type = batch_node.get("class_type", "")
                 if class_type == "BatchImagesNode":
-                    # COMFY_AUTOGROW_V3: image0, image1, ...
+                    # COMFY_AUTOGROW_V3: images.image0, images.image1, ...
+                    images_inputs = inputs.setdefault("images", {})
+                    if not isinstance(images_inputs, dict):
+                        images_inputs = {}
                     for i, nid in enumerate(load_node_ids):
-                        inputs[f"image{i}"] = [nid, 0]
-                    # Убираем пустое images если осталось
-                    inputs.pop("images", None)
+                        images_inputs[f"image{i}"] = [nid, 0]
+                    inputs["images"] = images_inputs
                 else:
                     # Старый формат: images = [[node, idx], ...]
                     inputs[bind.batch_field] = [
