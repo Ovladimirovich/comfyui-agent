@@ -3,7 +3,15 @@ from __future__ import annotations
 
 from .chain import ChainContext, ChainResult, ChainState, ExecutionChain
 from .engine import WorkflowEngine
-from .experience import ChainExperience, ChainStepExperience, ExperienceStore, build_chain_experience
+from .experience import (
+    ChainExperience,
+    ChainStepExperience,
+    ExperienceAnalytics,
+    ExperienceHint,
+    ExperienceStore,
+    TemporalStats,
+    build_chain_experience,
+)
 from .history import ExecutionHistory, ExecutionRecord
 from .job import Job, JobState
 from .plan import ExecutionPlan

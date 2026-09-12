@@ -1,6 +1,10 @@
-# HARDWARE_PROFILE.md — Оптимизация для AMD Radeon RX 570 4GB
+# HARDWARE_PROFILE.md — LEGACY (AMD Radeon RX 570 4GB + DirectML)
 
-## Конфигурация
+> **LEGACY** (2026-09-06): Этот профиль описывает старую конфигурацию DirectML.
+> Текущий runtime: ComfyUI 0.34.5 + Python 3.13.12 + Torch 2.12.1+cpu (CPU mode).
+> Компьютер с DirectML/RX 570 оставлен как резервная копия до завершения миграции.
+
+## Конфигурация (legacy)
 
 | Компонент | Значение |
 |-----------|----------|

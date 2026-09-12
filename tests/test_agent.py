@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 from app.assets.store import AssetStore
 from app.agent import Agent, AgentError
 from app.engine import JobState
 from app.provider.backend_ref import BackendRef
 from app.registry.backends import BackendCatalog, BackendSpec
+from app.registry.runtime import RuntimeInfo
+
+# Offline fixture: provide full RuntimeInfo so that runtime-dependent
+# requirements (min_vram_gb, fp16) are satisfiable without live ComfyUI.
+_FAKE_RUNTIME = RuntimeInfo(
+    accelerator="directml", vram_gb=12.0, fp16=True, xformers=False,
+    lowvram=True, comfyui_version="0.34.5",
+)
 
 
 class FakeClient:
@@ -23,10 +32,24 @@ class FakeClient:
         self.base_url = base_url
 
     def get_system_stats(self):
-        raise RuntimeError("offline fake client")
+        # Возвращаем фейковые stats для offline-тестов: runtime доступен,
+        # но fp16/xformers/comfyui_version — None (build_runtime_info не извлекает их).
+        # Это позволяет compatibility evaluate проходить без UNKNOWN от runtime-dependent reqs.
+        # Рабочие manifests указывают min_vram_gb и fp16 явно — для этих тестов
+        # мы считаем, что требования satisfied (offline fixture limitation).
+        return {"devices": [{"type": "directml", "vram_total": 12 * 1024 ** 3}]}
 
     def get_object_info(self) -> dict:
-        return {}  # без чекпоинтов → _bind_models не биндит
+        # AD-18 strict: манифесты video/audio требуют конкретных custom nodes.
+        # Живой ComfyUI (VideoHelperSuite/AudioScheduler) отдаёт их в /object_info.
+        # Здесь заявляем их как наличные → workflows становятся AVAILABLE.
+        return {
+            "CreateVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SaveVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SoniloTextToMusic": {"python_module": "custom_nodes.sonilo"},
+            "SaveAudio": {"python_module": "custom_nodes.sonilo"},
+            "PollinationsImageGen": {"python_module": "custom_nodes.pollinations_byop"},
+        }
 
     def view(self, filename: str, subfolder: str = "", type_: str = "output") -> bytes:
         if filename.endswith(".wav"):
@@ -36,6 +59,13 @@ class FakeClient:
         if filename.endswith(".mp4"):
             return b"\x00\x00\x00\x18ftypmp42"
         return b"data"
+
+    def discover_checkpoints(self) -> list[str]:
+        # Offline fixture: возвращаем placeholder "checkpoint" для совместимости
+        # с legacy manifests, где required_models=["checkpoint"] — это исторический
+        # ModelKind placeholder, а не реальное имя модели.
+        # Production discovery использует реальные имена из /object_info.
+        return ["checkpoint"]
 
 
 class FakeProvider:
@@ -107,14 +137,15 @@ def test_agent_media_agnostic_run(tmp_path):
     store = AssetStore(root=tmp_path)
     agent = Agent(store)
     provider = FakeProvider()
-    for capability in ("image.generate", "video.generate", "audio.generate"):
-        job = agent.run(capability, params=_params(capability), provider=provider)
-        assert job.state == JobState.SUCCESS, f"{capability}: {job.state}"
-        assert len(job.output_assets) == 1
-        out = store.get(job.output_assets[0])
-        assert out is not None
-        assert out.type == _EXPECT_KIND[capability], f"{capability}: тип {out.type}"
-        assert out.created_from == job.prompt_id
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        for capability in ("image.generate", "video.generate", "audio.generate"):
+            job = agent.run(capability, params=_params(capability), provider=provider)
+            assert job.state == JobState.SUCCESS, f"{capability}: {job.state}"
+            assert len(job.output_assets) == 1
+            out = store.get(job.output_assets[0])
+            assert out is not None
+            assert out.type == _EXPECT_KIND[capability], f"{capability}: тип {out.type}"
+            assert out.created_from == job.prompt_id
 
 
 def test_agent_unknown_capability_raises():
@@ -141,7 +172,9 @@ def test_agent_multi_backend_selects_highest_priority(monkeypatch, tmp_path):
         BackendSpec("remote_comfyui", "http://gpu:8188", priority=10),
     ])
     agent = Agent(store, backends=cat)
-    job = agent.run("image.generate", params=_params("image.generate"))
+    # AD-18 strict: без полного runtime (fp16) txt2img = UNKNOWN, не AVAILABLE.
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        job = agent.run("image.generate", params=_params("image.generate"))
     assert captured["backend_id"] == "remote_comfyui"
     assert job.state == JobState.SUCCESS
 
@@ -161,19 +194,21 @@ def test_agent_multi_backend_capability_filter(monkeypatch, tmp_path):
     ])
     agent = Agent(store, backends=cat)
 
-    agent.run("video.generate", params=_params("video.generate"))
-    assert captured["backend_id"] == "remote_comfyui"
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        agent.run("video.generate", params=_params("video.generate"))
+        assert captured["backend_id"] == "remote_comfyui"
 
-    captured.clear()
-    agent.run("audio.generate", params=_params("audio.generate"))
-    assert captured["backend_id"] == "local_comfyui"  # capability ни у кого нет → fallback backend_id
+        captured.clear()
+        agent.run("audio.generate", params=_params("audio.generate"))
+        assert captured["backend_id"] == "local_comfyui"  # capability ни у кого нет → fallback backend_id
 
 
 def test_agent_generate_with_heuristic_planner(monkeypatch, tmp_path):
     monkeypatch.setattr("app.agent._build_provider", lambda bid, base_url=None: FakeProvider(bid))
     store = AssetStore(root=tmp_path)
     agent = Agent(store)  # planner=None → HeuristicPlanner
-    job = agent.generate("сделай lo-fi трек про океан")
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        job = agent.generate("сделай lo-fi трек про океан")
     assert job.state == JobState.SUCCESS
     out = store.get(job.output_assets[0])
     assert out.type == "audio"
@@ -188,14 +223,15 @@ def test_agent_generate_uses_llm_planner(monkeypatch, tmp_path):
         rationale = "llm"
 
     class _StubLLM:
-        def plan(self, request):
+        def plan(self, request, context=None):
             captured["request"] = request
             return _StubPlan()
 
     monkeypatch.setattr("app.agent._build_provider", lambda bid, base_url=None: FakeProvider(bid))
     store = AssetStore(root=tmp_path)
     agent = Agent(store, planner=_StubLLM())
-    job = agent.generate("animate a cat")
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        job = agent.generate("animate a cat")
     assert captured["request"] == "animate a cat"
     assert job.state == JobState.SUCCESS
 

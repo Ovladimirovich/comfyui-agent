@@ -1,0 +1,19 @@
+{
+  "1": {
+    "class_type": "OpenAICompatibleChat",
+    "inputs": {
+      "base_url": "http://127.0.0.1:20130/v1",
+      "api_key": "local",
+      "model": "default",
+      "prompts.text_1": "Hello, world!"
+    }
+  },
+  "2": {
+    "class_type": "SaveText",
+    "inputs": {
+      "text": ["1", 0],
+      "filename_prefix": "ComfyUI",
+      "format": "txt"
+    }
+  }
+}

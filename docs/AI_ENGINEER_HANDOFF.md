@@ -42,7 +42,9 @@
 
 ## 1. ЧТО ЭТО ЗА ПРОЕКТ
 
-**ComfyUI Agent v1** — Multimodal Agent Operator поверх ComfyUI (локальный, AMD DirectML).
+**ComfyUI Agent v1** — Multimodal Agent Operator поверх ComfyUI (локальный, CPU).
+
+> **Runtime (2026-09-06):** ComfyUI 0.34.5 + Python 3.13.12 + Torch 2.12.1+cpu.
 
 - **Рабочая директория:** `C:\cd\ComfyUI_AMD\agent\`
 - **ComfyUI:** `127.0.0.1:8188` (только localhost)

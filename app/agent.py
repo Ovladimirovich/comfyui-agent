@@ -27,9 +27,21 @@ from app.engine.semantic_verifier import SemanticVerifier, SemanticVerificationR
 from app.planner import HeuristicPlanner, PlanResult, Planner
 from app.provider.comfyui import ComfyUIProvider
 from app.registry.backends import BackendCatalog, BackendSpec
+from app.registry.discovery import (
+    DiscoveryFacts,
+    checkpoints_from_node_schema_store,
+    custom_nodes_from_node_schema_store,
+)
 from app.registry.model import ModelKind, ModelRegistry
 from app.registry.registry import WorkflowRegistry
 from app.registry.runtime import RuntimeInfo, discover_runtime
+from app.registry.workflow import (
+    ModelRequirement,
+    UnknownReason,
+    UnavailableReason,
+    Workflow,
+    WorkflowStatus,
+)
 
 
 DEFAULT_WORKFLOWS_DIR = os.path.join(
@@ -51,6 +63,78 @@ def _build_provider(backend_id: str, base_url: Optional[str] = None) -> ComfyUIP
             "не задан ComfyUI endpoint: передайте base_url или env COMFY_REMOTE_URL/COMFY_URL"
         )
     return ComfyUIProvider(ComfyClient(base_url=url), backend_id=backend_id)
+
+
+def _has_runtime_dependent_requirements(workflow: Workflow) -> bool:
+    """Совместимость workflow зависит от runtime-сведений?
+
+    AD-18: если runtime неизвестен (None), workflow с runtime-dependent
+    требованиями НЕ может быть подтверждён как AVAILABLE. Сюда входят:
+      - accelerator, отличный от "any";
+      - fp16 == True;
+      - min_vram_gb > 0;
+      - min_comfyui_version вне ("", "0.0.0") (уже после semver-парсинга).
+    """
+    req = workflow.requirements
+    if req.get("accelerator") and req.get("accelerator") != "any":
+        return True
+    if req.get("fp16") is True:
+        return True
+    if (req.get("min_vram_gb") or 0) > 0:
+        return True
+    mcv = workflow.min_comfyui_version
+    if mcv and mcv not in ("", "0.0.0"):
+        return True
+    return False
+
+
+def _resolve_model_requirements(
+    reqs: list[ModelRequirement],
+    models: set | None = None,
+    model_registry: Optional[ModelRegistry] = None,
+    backend_id: Optional[str] = None,
+    user_preference: Optional[str] = None,
+) -> dict[str, str]:
+    """Разрешить typed model requirements в concrete model bindings (AD-MODEL-BINDING-001).
+
+    Возвращает {role_or_identity: concrete_model_name}, например
+    {"checkpoint": "cyberrealistic_v80.safetensors"}.
+
+    Определения:
+      - kind requirement: role (например "checkpoint") → точное имя модели backend'а;
+      - identity requirement: точное имя (identity) → binding["<identity>"] = identity.
+
+    Детерминированность: при нескольких кандидатах берётся первый алфавитно.
+    user_preference переопределяет выбор для kind requirement, если модель
+    присутствует в catalog'е нужного вида (identity requirements не трогаем).
+    """
+    from app.registry.model import ModelKind
+
+    models = models or set()
+    bindings: dict[str, str] = {}
+    for req in reqs:
+        if req.identity is not None:
+            if req.identity in models:
+                bindings[req.identity] = req.identity
+            # absent identity — пропускаем (downstream увидит MISSING_MODEL в compatibility)
+            continue
+        # kind requirement
+        key = req.kind.value if req.kind is not None else "model"
+        candidates: list[str] = []
+        if model_registry is not None and backend_id is not None:
+            for name, info in model_registry._catalog.get(backend_id, {}).items():
+                if name in models and info.kind == req.kind:
+                    candidates.append(name)
+            candidates = sorted(set(candidates))
+        else:
+            candidates = sorted(models, key=str)
+        if not candidates:
+            continue  # пропускаем при пустых models (downstream MISSING_MODEL)
+        if user_preference and user_preference in candidates:
+            bindings[key] = user_preference
+        else:
+            bindings[key] = candidates[0]
+    return bindings
 
 
 class Agent:
@@ -78,12 +162,16 @@ class Agent:
         gateway=None,  # M21: optional ClusterGateway for dispatch tracking
         reconciler=None,  # M21: optional Reconciler for recovery
         feedback_store=None,  # M24.1: хранилище feedback для RetryPolicy
+        runtime_validator=None,  # S4: валидатор нод на реальном ComfyUI
     ) -> None:
         self.store = asset_store
         self.model_registry = model_registry
         self.backends = backends
         self.planner = planner
         self.prompt_builder = prompt_builder  # M11.6
+        # S4: RuntimeValidator и кэш валидированных нод (node_class -> success bool)
+        self.runtime_validator = runtime_validator
+        self._validated_nodes: dict[str, bool] = {}
         self.registry = WorkflowRegistry()
         self.registry.discover(workflows_dir)
         self.engine = WorkflowEngine(asset_store, model_registry=model_registry)
@@ -102,9 +190,156 @@ class Agent:
 
     # --- discovery (media-agnostic) ---
 
-    def capabilities(self) -> list[str]:
-        """Все известные capability (image.generate, video.generate, audio.generate, …)."""
-        return sorted({wf.capability for wf in self.registry.workflows if wf.capability})
+    def _discover_facts(
+        self, client, backend_id: str
+    ) -> DiscoveryFacts:
+        """Extended Discovery (Step 7): собрать факты о runtime, моделях, custom nodes.
+
+        Словарь-инвентарь моделей и custom nodes с graceful degradation:
+        если live-источник недоступен — кэш NodeSchemaStore (models_available /
+        custom_nodes_available остаётся False). AD-18: cache ≠ live.
+        """
+        from app.comfy.client import ComfyClient
+
+        runtime: Optional[RuntimeInfo] = None
+        runtime_available = False
+        try:
+            runtime = discover_runtime(client)
+            runtime_available = True
+        except Exception:
+            runtime = None
+
+        models: set[str] = set()
+        models_available = False
+        try:
+            if self.model_registry is not None:
+                self.model_registry.discover(client, backend_id)
+                names = set(self.model_registry.models_for(backend_id))
+            else:
+                names = set(client.discover_checkpoints() or [])
+            if names:
+                models = names
+                models_available = True
+            else:
+                # Live вернул [] — knowledge gap, подставляем cache.
+                # models_available остаётся False (cache ≠ live).
+                cached = checkpoints_from_node_schema_store()
+                if cached:
+                    models = cached
+        except Exception:
+            cached = checkpoints_from_node_schema_store()
+            if cached:
+                models = cached
+
+        custom_nodes: dict[str, set[str]] = {}
+        custom_nodes_available = False
+        try:
+            inventory = ComfyClient.discover_custom_node_packages(client)
+            custom_nodes = inventory or {}
+            # Live success — даже если empty, это реальность, не cache.
+            custom_nodes_available = True
+        except Exception:
+            cached = custom_nodes_from_node_schema_store()
+            if cached:
+                custom_nodes = cached
+
+        return DiscoveryFacts(
+            runtime=runtime,
+            runtime_available=runtime_available,
+            models=models,
+            models_available=models_available,
+            custom_nodes=custom_nodes,
+            custom_nodes_available=custom_nodes_available,
+        )
+
+    def _compatibility_from_known(
+        self,
+        workflow: Workflow,
+        runtime: Optional[RuntimeInfo],
+        models: set,
+        custom_nodes: set,
+    ) -> tuple[WorkflowStatus, list]:
+        """Подтвердить совместимость workflow исходя из known-данных (AD-18).
+
+        В отличие от evaluate_compatibility (полный контракт с runtime), здесь
+        runtime может быть None (неизвестен). Если у workflow есть runtime-dependent
+        требования и runtime==None — это UNKNOWN, а НЕ AVAILABLE (AD-18 инвариант).
+        Проверяем так же declarative требования (models/custom_nodes) до runtime-branch.
+        """
+        # declared_only никогда не исполним (даже offline)
+        if workflow.declared_only:
+            return WorkflowStatus.DECLARED_ONLY, []
+
+        # манифест/граф уже невалидны
+        if (
+            UnavailableReason.INVALID_MANIFEST in workflow.reasons
+            or UnavailableReason.INVALID_WORKFLOW in workflow.reasons
+        ):
+            return WorkflowStatus.UNAVAILABLE, list(workflow.reasons)
+
+        # --- declarative requirements (проверяем ДО runtime-branch, AD-18 Case B) ---
+        model_reqs = list(getattr(workflow, "model_requirements", None) or [])
+        if model_reqs:
+            # Typed ModelRequirement: kind (any model of kind) / identity (exact name)
+            if not models:
+                return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_MODEL]
+            for mr in model_reqs:
+                if mr.identity is not None and mr.identity not in models:
+                    return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_MODEL]
+                elif mr.kind is not None and not models:
+                    return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_MODEL]
+        elif workflow.required_models:
+            # Legacy: точное совпадение имён (backward-compat, как в compatibility.py)
+            if not models:
+                return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_MODEL]
+            for m in workflow.required_models:
+                if m not in models:
+                    return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_MODEL]
+
+        if workflow.required_custom_nodes:
+            from app.registry.discovery import _custom_node_names
+
+            names = _custom_node_names(custom_nodes)
+            if not names:
+                return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_CUSTOM_NODE]
+            for c in workflow.required_custom_nodes:
+                if c not in names:
+                    return WorkflowStatus.UNAVAILABLE, [UnavailableReason.MISSING_CUSTOM_NODE]
+
+        # --- runtime-dependent branch (AD-18) ---
+        if runtime is None:
+            if _has_runtime_dependent_requirements(workflow):
+                return WorkflowStatus.UNKNOWN, [UnknownReason.UNKNOWN_RUNTIME]
+            return WorkflowStatus.AVAILABLE, []
+
+        # runtime present — полная проверка контракта
+        from app.registry.compatibility import evaluate_compatibility
+
+        return evaluate_compatibility(
+            workflow, runtime, models=models, custom_nodes=custom_nodes
+        )
+
+    def _calculate_validation_score(self, workflow: "Workflow") -> int:
+        """Кол-во валидированных нод в workflow (S4).
+
+        Каждая нода workflow["nodes"][*]["type"] считается если в
+        self._validated_nodes[type] == True. Для MagicMock-совместимости
+        (тесты S4) допускаем workflow-объекты, у которых есть атрибут .workflow.
+        """
+        nodes = getattr(workflow, "workflow", None)
+        if not nodes:
+            return 0
+        node_list = nodes.get("nodes") if isinstance(nodes, dict) else None
+        if not node_list:
+            return 0
+        score = 0
+        for node in node_list:
+            if not isinstance(node, dict):
+                continue
+            cls = node.get("type")
+            if cls and self._validated_nodes.get(cls) is True:
+                score += 1
+        return score
 
     def _select_manifest(
         self,
@@ -113,22 +348,110 @@ class Agent:
         models: set,
         custom_nodes: set,
     ):
-        # Честный выбор по совместимости (если есть runtime). None → fallback ниже.
-        sel = None
-        if runtime is not None:
-            sel = self.registry.select(
-                capability, runtime, models=models, custom_nodes=custom_nodes
-            )
-        if sel:
-            return self.registry.get(sel.workflow_id, sel.version)
+        """Строгий выбор workflow (AD-18 + S4): по by_capability + совместимости.
+
+        Falls back НЕ происходит молча: кандидат выбирается только если его
+        совместимость ПОДТВЕРЖДЕНА (AVAILABLE) через _compatibility_from_known.
+        При runtime=None workflow с runtime-dependent требованиями → UNKNOWN и
+        НЕ выбирается. Если ни один кандидат не подтверждён — AgentError.
+        """
         candidates = self.registry.by_capability(capability)
         if not candidates:
             raise AgentError(f"capability не найден: {capability}")
-        # fallback: первый VALIDATED/AVAILABLE (исполнимый), иначе первый.
+
+        # Оцениваем каждого кандидата и выбираем подтверждённые (AVAILABLE).
+        confirmed: list[Workflow] = []
         for c in candidates:
-            if c.status.value in ("VALIDATED", "AVAILABLE"):
-                return c
-        return candidates[0]
+            if getattr(c, "declared_only", False):
+                c.status = WorkflowStatus.DECLARED_ONLY
+                c.reasons = []
+                continue
+            try:
+                wf = self.registry.get(c.id, c.version) or c
+            except Exception:
+                wf = c
+            status, reasons = self._compatibility_from_known(wf, runtime, models, custom_nodes)
+            c.status = status
+            c.reasons = reasons
+            if status == WorkflowStatus.AVAILABLE:
+                confirmed.append(c)
+
+        if not confirmed:
+            raise AgentError("нет workflow с подтверждённой совместимостью")
+
+        # S4: приоритет валидированным workflow (validated-score desc) ПЕРВЫМ,
+        # затем priority desc, min_vram_gb asc, id, версия (детерминированный tie-break).
+        ranked = sorted(
+            confirmed,
+            key=lambda w: (
+                -self._calculate_validation_score(
+                    self.registry.get(w.id, w.version) or w
+                ),
+                getattr(w, "priority", 0) * -1,
+                ((w.requirements or {}).get("min_vram_gb") or 0),
+                getattr(w, "id", ""),
+                getattr(w, "version", ""),
+            ),
+        )
+        chosen = ranked[0]
+        return self.registry.get(chosen.id, chosen.version) or chosen
+
+    # --- discovery (media-agnostic) ---
+
+    def capabilities(self) -> list[str]:
+        """Все известные capability (image.generate, video.generate, audio.generate, …)."""
+        return sorted({wf.capability for wf in self.registry.workflows if wf.capability})
+
+    # --- S4: validated nodes cache ---
+
+    def get_validated_nodes(self) -> dict[str, bool]:
+        """Вернуть кэш валидированных нод (node_class -> True/False)."""
+        return dict(self._validated_nodes)
+
+    def _validate_capability_nodes_background(self, capability: str) -> None:
+        """S4: фоновая runtime-валидация нод workflow кандидатов capability.
+
+        Запускает daemon-поток: для каждого workflow в capability вызывает
+        runtime_validator.validate_node(node_type) и обновляет _validated_nodes.
+        Пропускается если runtime_validator не задан или нет валидатора.
+        """
+        validator = self.runtime_validator
+        if validator is None:
+            return
+        import threading as _threading
+
+        from app.knowledge.runtime_validator import RuntimeValidator, ValidationResult
+
+        def _run():
+            for cand in self.registry.by_capability(capability):
+                wf_id = getattr(cand, "workflow_id", None) or getattr(cand, "id", None)
+                ver = getattr(cand, "version", None)
+                if not wf_id:
+                    continue
+                try:
+                    wf = self.registry.get(wf_id, ver)
+                except Exception:
+                    wf = None
+                if wf is None:
+                    continue
+                nodes_data = getattr(wf, "workflow", None)
+                if not isinstance(nodes_data, dict):
+                    continue
+                node_list = nodes_data.get("nodes")
+                if not isinstance(node_list, list):
+                    continue
+                for node in node_list:
+                    node_type = node.get("type") if isinstance(node, dict) else None
+                    if not node_type:
+                        continue
+                    try:
+                        evidence = validator.validate_node(node_type)
+                        ok = getattr(evidence, "validation_result", None) == ValidationResult.SUCCESS
+                        self._validated_nodes[node_type] = bool(ok)
+                    except Exception:
+                        self._validated_nodes[node_type] = False
+
+        _threading.Thread(target=_run, daemon=True).start()
 
     # --- подготовка (без исполнения) — для инспекции/тестов ---
 
@@ -153,21 +476,8 @@ class Agent:
             if provider is None:
                 provider = _build_provider(backend_id, base_url=base_url)
 
-        runtime: Optional[RuntimeInfo] = None
-        models: set = {"checkpoint"}
-        custom_nodes: set = set()
-        try:
-            runtime = discover_runtime(provider.client)
-            if self.model_registry is not None:
-                self.model_registry.discover(
-                    provider.client, backend_id, kinds=[ModelKind.CHECKPOINT]
-                )
-                models |= set(self.model_registry.models_for(backend_id))
-        except Exception:
-            # окруженческая недоступность ComfyUI — продолжаем без runtime-фильтрации
-            runtime = None
-
-        manifest = self._select_manifest(capability, runtime, models, custom_nodes)
+        facts = self._discover_facts(provider.client, backend_id)
+        manifest = self._select_manifest(capability, facts.runtime, facts.models, facts.custom_nodes)
 
         asset_bindings: dict = {}
         if asset_paths:
@@ -175,12 +485,21 @@ class Agent:
                 asset = self.store.ingest(path, type="input", role="input")
                 asset_bindings[role] = asset.id
 
+        # AD-MODEL-BINDING-001: resolved model bindings в ExecutionPlan
+        model_bindings: dict = {}
+        reqs = list(getattr(manifest, "model_requirements", None) or [])
+        if reqs:
+            model_bindings = _resolve_model_requirements(
+                reqs, facts.models, self.model_registry, backend_id
+            )
+
         plan = ExecutionPlan(
             capability=capability,
             workflow_id=manifest.id,
             version=manifest.version,
             params=params or {},
             asset_bindings=asset_bindings,
+            model_bindings=model_bindings,
         )
         return manifest, plan, provider
 

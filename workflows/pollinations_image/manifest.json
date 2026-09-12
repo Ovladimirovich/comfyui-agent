@@ -1,0 +1,35 @@
+{
+  "id": "pollinations_image",
+  "version": "1.0.0",
+  "capability": "image.generate",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "inputs": {
+    "prompt": {"node": "1", "field": "prompt"},
+    "model": {"node": "1", "field": "model"},
+    "width": {"node": "1", "field": "width"},
+    "height": {"node": "1", "field": "height"},
+    "seed": {"node": "1", "field": "seed"}
+  },
+  "asset_inputs": {},
+  "outputs": {
+    "result": {"node": "2", "kind": "image"}
+  },
+  "parameters": {
+    "model": {"default": "flux", "options": ["flux", "flux-2-dev", "gptimage"]},
+    "width": {"default": 1024, "min": 256, "max": 4096},
+    "height": {"default": 1024, "min": 256, "max": 4096},
+    "seed": {"default": 42, "min": -1, "max": 2147483647}
+  },
+  "required_models": [],
+  "required_custom_nodes": ["pollinations-byop"],
+  "min_comfyui_version": "0.0.0",
+  "requirements": {"accelerator": "any", "xformers": false, "min_vram_gb": 0, "fp16": false},
+  "limits": {
+    "max_upload_bytes": 0,
+    "max_asset_duration": 0,
+    "max_video_width": 0,
+    "max_video_height": 0,
+    "max_sequence_length": 0
+  }
+}

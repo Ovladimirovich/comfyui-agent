@@ -90,6 +90,20 @@
 - **M11.1-M11.3 ✅ IMPLEMENTED:** Prompt Builder contract + HeuristicPromptBuilder + UI endpoint + кнопка ✨.
 - **M11.4-M11.6 ✅ IMPLEMENTED:** LLMPromptBuilder (online) + CompositePromptBuilder (fallback orchestration) + Planner integration (Agent.generate + ConversationAgent.turn).
 
+## M12 считается готовым только если (Real UI E2E)
+```text
+[✓] ComfyUIProcessManager реализован (app/comfy/lifecycle.py): check/wait_for_ready/start/stop
+[✓] UI использует CompositePromptBuilder по умолчанию (HEURISTIC → LLM → HEURISTIC_FALLBACK)
+[✓] Реальный POST /turn execution path: request → Planner → PromptBuilder → prepare → engine.execute → Job
+[✓] SSE progress events: start → status(RUNNING) → progress(%) → result|error
+[✓] Browser E2E: HTML+JS клиент подключается к серверу, отправляет request, получает SSE, показывает preview
+[✓] Multi-turn context: active_asset резолвится между turns, lineage сохраняется
+[✓] Session isolation: разные session_id → разные ConversationContext, не смешиваются
+[✓] error handling: execution error → SSE error event, dialog_state=error, unresolved записан
+[✓] тест зелёный (offline через FakeProvider; real-E2E skip при отсутствии backend)
+[✓] architecture freeze: UI layer не модифицирует execution core
+```
+
 ## M13 считается готовым только если (Execution History + Retry)
 ```text
 [✓] ExecutionHistory (JSONL) сохраняет record после каждого turn

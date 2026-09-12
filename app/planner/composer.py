@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+from app.engine.experience import ExperienceHint
 from app.planner.capability_graph import CapabilityGraph
 from app.planner.composition_result import CompositionResult
 
@@ -49,6 +50,7 @@ class Composer:
         target_capability: str,
         params: dict,
         available_types: set[str] | None = None,
+        experience_hint: Optional["ExperienceHint"] = None,  # M26.4
     ) -> CompositionResult:
         """Составить chain для достижения target capability.
         
@@ -56,6 +58,9 @@ class Composer:
             target_capability: Целевая capability (например, "image.upscale")
             params: Параметры для каждого шага
             available_types: Доступные типы media на входе
+            experience_hint: M26.4 — опциональный signal от ExperienceAnalytics.
+                Используется ТОЛЬКО для computed suggestion; НЕ меняет capability
+                availability, НЕ переписывает chain/alternatives (не auto-policy).
             
         Returns:
             CompositionResult с chain или failure reason
@@ -97,7 +102,21 @@ class Composer:
         chain = self._path_to_subtasks(best_path, params)
         alt_chains = [self._path_to_subtasks(p, params) for p in alternatives]
         
-        return CompositionResult.ok(chain=chain, alternatives=alt_chains)
+        result = CompositionResult.ok(chain=chain, alternatives=alt_chains)
+
+        # M26.4: experience-derived suggestion (computed, необязательная, не меняет выбор).
+        # Модель: Experience → analytics → signal → suggestion (НЕ automatic prohibition).
+        if experience_hint is not None and experience_hint.sample_count > 0:
+            parts = [f"Experience (n={experience_hint.sample_count})"]
+            if experience_hint.avg_temporal_consistency is not None:
+                parts.append(
+                    f"avg temporal consistency {experience_hint.avg_temporal_consistency:.2f}"
+                )
+            if experience_hint.preferred_params:
+                parts.append(f"preferred params {experience_hint.preferred_params}")
+            result.suggestions.append(" — ".join(parts))
+
+        return result
     
     def _path_to_subtasks(self, path: list[str], params: dict) -> list[SubTask]:
         """Конвертировать path (list of capability IDs) в SubTasks."""

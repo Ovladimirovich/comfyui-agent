@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Optional
 
 from app.assets import Asset
+from app.registry.discovery import _custom_node_names
 from app.registry.runtime import RuntimeInfo
 from app.registry.semver import compare_version
 from app.registry.workflow import (
@@ -94,8 +95,25 @@ def evaluate_compatibility(
             except ValueError:
                 unknown.append(UnknownReason.UNKNOWN_VERSION)
 
-    # --- required models (по точному имени) ---
-    if workflow.required_models:
+    # --- required models (AD-MODEL-BINDING-001: typed kind/identity OR legacy exact) ---
+    model_reqs = list(getattr(workflow, "model_requirements", None) or [])
+    if model_reqs:
+        if models is None:
+            # не можем подтвердить наличие → считаем отсутствующей
+            reasons.append(UnavailableReason.MISSING_MODEL)
+        else:
+            for req in model_reqs:
+                if req.identity is not None:
+                    # точное имя — только точное совпадение (без guessing)
+                    if req.identity not in models:
+                        reasons.append(UnavailableReason.MISSING_MODEL)
+                        break
+                else:
+                    # kind требование: любая модель этого вида/любое имя
+                    if not models:
+                        reasons.append(UnavailableReason.MISSING_MODEL)
+                        break
+    elif workflow.required_models:
         if models is None:
             # не можем подтвердить наличие → считаем отсутствующей
             reasons.append(UnavailableReason.MISSING_MODEL)
@@ -105,13 +123,14 @@ def evaluate_compatibility(
                     reasons.append(UnavailableReason.MISSING_MODEL)
                     break
 
-    # --- required custom nodes (по идентификатору из object_info) ---
+    # --- required custom nodes (package name ИЛИ node class name, exact match) ---
     if workflow.required_custom_nodes:
-        if custom_nodes is None:
+        names = _custom_node_names(custom_nodes)
+        if not names:
             reasons.append(UnavailableReason.MISSING_CUSTOM_NODE)
         else:
             for c in workflow.required_custom_nodes:
-                if c not in custom_nodes:
+                if c not in names:
                     reasons.append(UnavailableReason.MISSING_CUSTOM_NODE)
                     break
 

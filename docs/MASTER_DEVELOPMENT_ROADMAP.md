@@ -116,7 +116,7 @@ ConversationAgent.turn() (app/conversation.py)
 | `SemanticVerifier` | `app/engine/semantic_verifier.py` | ✅ FROZEN | M14 |
 | `SessionManager` | `app/context/` | ✅ FROZEN | M15 |
 | `AdaptivePlanner` | `app/planner/adaptive.py` | ✅ FROZEN | M16 |
-| `FeedbackStore` | `app/context/feedback.py` | ✅ FROZEN (dead wiring) | M17 |
+| `FeedbackStore` | `app/context/feedback.py` | ✅ FROZEN (wired; D12 CLOSED, M26.2 ACCEPTED) | M17 |
 | `TaskDecomposer` | `app/planner/decomposer.py` | ✅ FROZEN | M18 |
 | `ExecutionChain` | `app/engine/chain.py` | ✅ FROZEN | M18 |
 | `Composer` | `app/planner/composer.py` | ✅ FROZEN | M19 |
@@ -124,9 +124,9 @@ ConversationAgent.turn() (app/conversation.py)
 | `ClusterGateway` | `app/resource/gateway.py` | ✅ FROZEN | M20 |
 | `Reconciler` | `app/resource/reconciler.py` | ✅ FROZEN | M21 |
 | `CorrectionStrategy` | `app/engine/retry.py` | ✅ FROZEN | M23 |
-| `ChainExperience` | `app/engine/experience.py` | ⚠️ IMPLEMENTED, not wired | M25.4 |
-| `Verifier.verify_sequence()` | `app/engine/verifier.py` | ⚠️ IMPLEMENTED, not wired | M25.3 |
-| `Engine._build_multi_asset_input()` | `app/engine/engine.py` | ⚠️ IMPLEMENTED, not wired | M25.2 |
+| `ChainExperience` / `SequenceExperience` | `app/engine/experience.py` | ✅ WIRED (`app/conversation.py:643`, B2) | M25.4 |
+| `SemanticVerifier.verify_temporal_consistency()` | `app/engine/semantic_verifier.py` | ✅ WIRED (`app/conversation.py:595/611`, B1) | M25.3 |
+| `Engine._build_multi_asset_input()` | `app/engine/engine.py` | ✅ WIRED (video.image_to_video multi) | M25.2 |
 
 ### 2.3 Критическое наблюдение: M25 wiring gap
 
@@ -137,6 +137,8 @@ ConversationAgent.turn() (app/conversation.py)
 3. **`ExperienceStore`** — реализован, но `conversation.py` **никогда не вызывает** `build_chain_experience()` после chain completion.
 4. **`Engine._build_multi_asset_input()`** — реализован, `AssetInput.multi` поддерживается, но реальный E2E с multi-asset → video **не прогнан**.
 5. **`FeedbackStore` → AdaptivePlanner/RetryPolicy** — `feedback_store` существует как параметр, но **не передаётся** из `conversation.py` в production (dead code, подтверждено `docs/28_LEARNING_ARCHITECTURE_AUDIT.md`).
+
+> **Correction (2026-09-11):** Пункты 1–4 устарели — закрыты в рамках M25 (B1/B2). `chain_id` генерируется в `ConversationAgent._execute_chain` (`chain_ctx.chain_id`); `verify_temporal_consistency()` вызывается в `app/conversation.py:595`; `build_chain_experience()`/`build_sequence_experience()` — в `app/conversation.py:643`. M25 = FROZEN. Пункт 5 (FeedbackStore dead wiring) ЗАКРЫТ в рамках M26.2 — D12 CLOSED (wiring подтверждён `test_m24_1_production_wiring.py`; `feedback_store` передаётся в `conversation.py:244/393/717`). M26.3 не затрагивает FeedbackStore.
 
 ---
 
@@ -239,26 +241,28 @@ ComfyUI ≠ Agent            Agent operates through Operator only
 | M14 | Semantic Verification | ✅ | ✅ 23 | ⚠️ needs API key | ✅ | `app/engine/semantic_verifier.py`, `test_m14_semantic_verification.py` |
 | M15 | Persistent Context | ✅ | ✅ 14 | ✅ offline | ✅ | `app/context/`, `test_m15_persistent_context.py` |
 | M16 | Adaptive Planner | ✅ | ✅ 16 | ✅ offline | ✅ | `app/planner/adaptive.py`, `test_m16_adaptive_planner.py` |
-| M17 | User Feedback | ✅ | ✅ 11 | ⚠️ dead wiring | ✅ | `app/context/feedback.py`, `test_m17_user_feedback.py` |
+| M17 | User Feedback | ✅ | ✅ 11 | ✅ wired (D12 CLOSED) | ✅ | `app/context/feedback.py`, `test_m17_user_feedback.py` |
 | M18 | Multi-Step Decomposition | ✅ | ✅ 17+8 | ✅ real E2E | ✅ | `app/planner/decomposer.py`, `chain.py`, `test_m18_*.py` |
 | M19 | Composer + CapabilityGraph | ✅ | ✅ 53+ | ✅ real E2E | ✅ | `app/planner/composer.py`, `test_m19_*.py` |
 | M20 | Cluster Gateway | ✅ | ✅ 10+ | ✅ offline | ✅ | `app/resource/gateway.py`, `test_m20_cluster_gateway.py` |
 | M21 | Reconciliation & Recovery | ✅ | ✅ 31 | ✅ real E2E | ✅ | `app/resource/reconciler.py`, `test_m21_*.py` |
 | M22 | Decision Bridge | ✅ | ✅ 14 | ✅ offline | ✅ | `app/engine/retry.py`, `test_m22_decision_bridge.py` |
 | M23 | Parameter Adjustment | ✅ | ✅ 35 | ✅ offline | ✅ | `app/engine/retry.py`, `test_m23_parameter_adjustment.py` |
-| M24 | Feedback-Driven Decision | ✅ | ✅ 21 | ⚠️ dead wiring | ✅ | `app/engine/retry.py`, `test_m24_*.py` |
-| **M25** | **Experience Foundation** | **⚠️ ~80%** | **⚠️ unit only** | **❌ NOT PROVEN** | **❌ NOT FROZEN** | `app/engine/experience.py`, `verifier.py`, `engine.py` |
+| M24 | Feedback-Driven Decision | ✅ | ✅ 21 | ✅ wired (D12 CLOSED) | ✅ | `app/engine/retry.py`, `test_m24_*.py` |
+| **M25** | **Experience Foundation** | **✅ 100%** | **✅ 38 M25 + 97 related** | **✅ PROVEN (B1/B2 closed 2026-09-11)** | **✅ FROZEN** | `app/engine/experience.py`, `verifier.py`, `engine.py`, `app/conversation.py` |
 
 ### 4.2 M25 Detailed Status
 
 | Phase | Компонент | Code | Tests | Production Wired | Real E2E |
 |-------|-----------|------|-------|-----------------|----------|
-| M25.1 | Chain Identity (`chain_id`) | ✅ | ✅ unit | ❌ NOT WIRED | ❌ |
-| M25.2 | Multi-Asset + Sequence | ✅ | ✅ unit | ❌ NOT WIRED | ❌ |
-| M25.3 | Sequence Verification | ✅ | ✅ unit | ❌ NOT WIRED | ❌ |
-| M25.4 | Experience Model | ✅ | ✅ unit | ❌ NOT WIRED | ❌ |
+| M25.1 | Chain Identity (`chain_id`) | ✅ | ✅ unit | ✅ WIRED (`ExecutionChain`/`ConversationAgent`) | ✅ |
+| M25.2 | Multi-Asset + Sequence | ✅ | ✅ unit + integration | ✅ WIRED (`video.image_to_video` multi) | ✅ |
+| M25.3 | Sequence Verification | ✅ | ✅ 11 unit | ✅ WIRED (`app/conversation.py:595`, B1) | ✅ |
+| M25.4 | Experience Model | ✅ | ✅ 13 unit + integration | ✅ WIRED (`app/conversation.py:643`, B2) | ✅ |
 
-**M25 Real E2E Status:** `tests/_m25_e2e_runner.py` и `tests/_m25_smoke_check.py` существуют, но **никогда не запускались** на реальном ComfyUI. Smoke check заблокирован окружением (SteadIP Windows Access Denied, `docs/M25_STADIP_AUDIT_PHASE1.md`).
+> **Correction (2026-09-11):** Первичный `M25_FORENSIC_ACCEPTANCE_AUDIT.md` вернул `NOT ACCEPTED` по B1/B2. Оба blocker'а закрыты (`docs/M25_COMPLETION_REPORT.md`): `verify_temporal_consistency()` имеет production caller (`app/conversation.py:595`), `SequenceExperience`/`build_sequence_experience()` встроены в experience flow (`app/conversation.py:643`). M25 = FROZEN. Вышеупомянутый §2.3 "M25 wiring gap" считать устаревшим (закрыт).
+
+**M25 Real E2E Status:** `tests/_m25_e2e_runner.py` и `tests/_m25_smoke_check.py` существуют, но **никогда не запускались** на реальном ComfyUI. Smoke check заблокирован окружением (SteadIP Windows Access Denied, `docs/M25_STADIP_AUDIT_PHASE1.md`). Production wiring доказана integration-тестами (`tests/test_m25_b1_b2_integration.py`, 12 tests) без живого ComfyUI.
 
 ---
 
@@ -291,6 +295,18 @@ ComfyUI ≠ Agent            Agent operates through Operator only
 
 **Решение:** M26–M30 — **предложенное направление (DRAFT), не утверждённый план**. После M25 Experience Foundation необходимо пересмотреть на основе реального опыта.
 
+### 5.3.1 Actual M26 — Experience-Driven Planning Loop (2026-09-11)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| M26.1 Experience Analytics | ✅ ACCEPTED | `ExperienceAnalytics` над `ExperienceStore` (read-only), без новой persistence |
+| M26.2 Experience → AdaptivePlanner | ✅ ACCEPTED | optional `experience_store` param, soft preference (ranking, НЕ prohibition) |
+| M26.4 Experience → Composer suggestions | ✅ ACCEPTED | `experience_hint` → computed suggestion |
+| M26.3 Video Editor Integration Boundary | 🔄 REDEFINED / DEFERRED | Интеграционный boundary Agent ↔ будущий Video Editor (media processing вне Agent). Variant A/B старой формулировки отменены; AD-44 SUPERSEDED |
+| D12 FeedbackStore → AdaptivePlanner | ✅ CLOSED | wiring уже существует (М24/М19); НЕ gap, НЕ изменять |
+
+M26 целиком **READY TO FREEZE** после docs reconciliation (M26.3 REDEFINED/DEFERRED, AD-44 SUPERSEDED). D12 CLOSED (wiring существует). AD-41 collision — отдельная doc-задача (не переименовывать в рамках M26). Детали: `docs/M26_PRE_IMPLEMENTATION_FORENSIC_DESIGN.md`, `docs/M26_COMPLETION_REPORT.md`, `docs/M26.3_FORENSIC_DESIGN.md`.
+
 ### 5.4 Superseded / Rejected Directions
 
 | Direction | Status | Reason |
@@ -311,10 +327,10 @@ ComfyUI ≠ Agent            Agent operates through Operator only
 
 | # | Проблема | Доказательство | Затрагивает | Риск |
 |---|----------|---------------|-------------|------|
-| G1 | M25 chain_id не генерируется в production | `search_files` по `chain_id` в `app/` = 0 результатов | M25.1, M25.4 | Experience не работает |
-| G2 | M25 verify_sequence не вызывается после video | `conversation.py` не вызывает `verify_sequence()` | M25.3 | Sequence не верифицируется |
-| G3 | M25 Experience не строится после chain | `conversation.py` не вызывает `build_chain_experience()` | M25.4 | Experience не сохраняется |
-| G4 | Feedback → AdaptivePlanner dead wiring | `docs/28_LEARNING_ARCHITECTURE_AUDIT.md` | M17, M24 | Feedback не влияет на planning |
+| G1 | ⚠️ CLOSED — M25 chain_id генерируется в production (`ConversationAgent._execute_chain`, B1/B2) | `app/conversation.py:595/643` | M25.1, M25.4 | Закрыто, M25 FROZEN |
+| G2 | ⚠️ CLOSED — M25 `verify_temporal_consistency()` вызывается (`app/conversation.py:595/611`, B1) | `semantic_verifier.py:266` | M25.3 | Закрыто, M25 FROZEN |
+| G3 | ⚠️ CLOSED — `build_chain_experience()`/`build_sequence_experience()` вызываются (`app/conversation.py:643`, B2) | `experience.py` | M25.4 | Закрыто, M25 FROZEN |
+| G4 | ⚠️ CLOSED — FeedbackStore → AdaptivePlanner WIRED (D12 CLOSED, M26.2 ACCEPTED) | `conversation.py:244/393/717`, `test_m24_1_production_wiring.py` | M17, M24 | Закрыто |
 
 ### 6.2 HIGH (архитектурно значимые)
 
@@ -351,8 +367,8 @@ ComfyUI ≠ Agent            Agent operates through Operator only
 
 | # | Debt | Severity | Milestone | Можно отложить? | Блиокирует roadmap? |
 |---|------|----------|-----------|-----------------|-------------------|
-| TD-1 | M25 production wiring (chain_id, verify_sequence, experience) | CRITICAL | M25 | Нет | Да — M25 не завершён |
-| TD-2 | Feedback dead wiring (AdaptivePlanner, RetryPolicy) | HIGH | M17/M24 | Нет | Да — learning loop не замкнут |
+| TD-1 | ⚠️ CLOSED — M25 production wiring завершён (B1/B2), M25 FROZEN | CLOSED | M25 | Да | Нет — закрыто |
+| TD-2 | ⚠️ CLOSED — Feedback wiring подтверждён (D12 CLOSED, M26.2 ACCEPTED) | CLOSED | M17/M24 | Да | Нет — закрыто |
 | TD-3 | M25 Real E2E not proven | HIGH | M25 | Нет | Да — M25 не может быть frozen |
 | TD-4 | Docs resync (PROJECT_SPEC §22, M21 design doc, Gateway design doc) | MEDIUM | — | Да | Нет |
 | TD-5 | Audio E2E blocked (Sonilo 401) | MEDIUM | M6 | Да (external) | Нет |

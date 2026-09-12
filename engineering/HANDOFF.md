@@ -16,6 +16,19 @@ ARCHITECTURAL DECISIONS
 NEXT RECOMMENDED TASK
 ```
 
+## ТЕКУЩЕЕ СОСТОЯНИЕ (для новой сессии OpenCode)
+
+> Заполняется перед логической границей сессии. Новая сессия восстанавливает состояние отсюда, не из истории чата. Правила границ сессий — в `AGENTS.md` §Session Boundary Management.
+
+- **Current milestone:** M26 — FROZEN (M26.1/26.2/26.4 ACCEPTED; M26.3 REDEFINED/DEFERRED; AD-44 SUPERSEDED). M25 FROZEN.
+- **Current phase:** POST-M26 — read-only forensic audit и docs reconciliation завершены.
+- **Current status:** стабильно; regression 192 passed, 1 skipped; 5 pre-existing INFRA fails (`test_planner_context`, AD-18) без изменений.
+- **Allowed work:** чтение/аудит; roadmap/docs reconciliation; новые milestone — только после approval автора.
+- **Forbidden work:** Python-код; изменение M25/M26/AD-41/AD-44/PlanContext/ExecutionRecord/JobState; Video Editor; FFmpeg/OpenCV; frame extraction; output-video quality gate.
+- **Last completed activity:** Post-M26 Roadmap & Architecture Audit (read-only) — вывод: NO NEW MILESTONE JUSTIFIED YET (единственный кодовый gap — LLMPlanner inert — зависит от внешнего API-ключа).
+- **Next activity:** по решению автора (см. HANDOFF 2026-09-11 внизу).
+- **Session boundary:** при завершении audit/design рекомендовать `START NEW SESSION` (см. формат в AGENTS.md).
+
 ## HANDOFF — 2026-08-29 (AI engineering documentation layer)
 - **CURRENT STATE:** documentation baseline зафиксирован; код не писался.
 - **COMPLETED:** PROJECT_SPEC v0.2 APPROVED; docs/00..18 APPROVED; AGENTS.md + engineering/* + tasks/*; workflows/video_generate (DECLARED_ONLY).
@@ -690,3 +703,475 @@ Audit M1–M4 по 13 инвариантам:
   - `test_comfy_cli_adapter.py::test_system_info_returns_data` — pre-existing (ComfyUI not running)
   - AdaptivePlanner (M16) learns from successes only — doesn't influence decisions
 - **NEXT RECOMMENDED TASK:** M25 (TBD) — or focus on E2E validation with real ComfyUI
+
+## HANDOFF — 2026-09-05 (Knowledge Core Slice 1 — DOD ACCEPTED)
+
+- **CURRENT STATE:** `app/knowledge/` package реализован и принят по 20-критерию DoD. Zero изменений в существующем коде.
+- **COMPLETED:**
+  - `app/knowledge/__init__.py` — package exports.
+  - `app/knowledge/models.py` — `KnowledgeEvidence`, `KnowledgeClaim`, `ClaimStatus` (UNKNOWN/INFERENCE/SUPPORTED/CONFIRMED).
+  - `app/knowledge/node_schema.py` — `FieldSpec`, `NodeSchema`, `NodeSchemaStore` (JSON persistence + diff).
+  - `app/knowledge/candidates.py` — `CapabilityCandidate`, `UsageHypothesis`, `InputMapping`, `CandidateGenerator`.
+  - `app/knowledge/gaps.py` — `GapType`, `GapNature`, `KnowledgeGap`.
+  - `app/knowledge/core.py` — `KnowledgeCore` (refresh/query/diff), `KnowledgeQuery`, `KnowledgeResponse`, `Readiness`.
+  - `app/knowledge/research.py` — `ResearchRequest`, `ResearchResult` (interfaces only, no execution).
+  - `tests/test_knowledge_core.py` — 31 unit tests.
+  - `tests/test_knowledge_acceptance.py` — 19 acceptance criteria, all PASS.
+- **TESTS:** 31 passed (unit) + 19 passed (acceptance).
+- **KNOWN FIXES (during acceptance):** `output_types` может содержать `list` элементы → filter `isinstance(o, str)`. `_infer_usage_for_mode()` cardinality per-mode (Image To Video=1, First and Last=2). `_assess_readiness()` UNKNOWN when no candidates+builtins.
+- **REAL RUNTIME PROOF:** ComfyUI v0.3.70, 672 nodes discovered, AgnesVideo present, snapshot=961KB, CapabilityRegistry unchanged (9 caps).
+- **ARCHITECTURAL DECISIONS:** NodeSchema = FACT only. CapabilityCandidate ≠ production capability (INFERENCE status). Research = contract only. Zero modifications to existing code.
+- **NEXT RECOMMENDED TASK:** Knowledge Core Slice 2 (Agent integration).
+
+## HANDOFF — 2026-09-05 (Knowledge Core Slice 2 — MINIMAL AGENT INTEGRATION)
+
+- **CURRENT STATE:** KnowledgeCore интегрирован в Agent/ConversationAgent как read-only pre-flight check. Zero regression.
+- **COMPLETED:**
+  - `app/engine/job.py` — 2 новых поля: `_knowledge_readiness`, `_knowledge_gaps` (optional metadata).
+  - `app/agent.py` — `knowledge_core` параметр в `__init__`, `_plan_result_to_query()` adapter, query после planning, metadata на Job.
+  - `app/conversation.py` — `knowledge_core` passthrough в `ConversationAgent.__init__`, query после planning в `turn()`, metadata на Job.
+  - `tests/test_knowledge_integration_s2.py` — 20 integration tests (TestA–G).
+- **FILES CHANGED:** 3 existing files (+61 lines), 1 new test file. Zero changes to Planner, WorkflowEngine, CapabilityRegistry, WorkflowRegistry.
+- **TESTS:** 20 passed (S2 integration) + 186 total regression (0 failures, 1 skip).
+- **INTEGRATION POINT:** `Agent.generate()` and `ConversationAgent.turn()` — после `planner.plan()`, перед `self.run()` / workflow selection. Read-only, non-blocking, infrastructure error → silent continue.
+- **KNOWLEDGE FLOW:** PlanResult → CapabilityRegistry lookup → KnowledgeQuery → KnowledgeCore.query() → KnowledgeResponse → `job._knowledge_readiness` / `job._knowledge_gaps`.
+- **READINESS BEHAVIOR:** EXECUTABLE / CANDIDATE_ONLY / GAP / UNKNOWN — never blocks, never raises, never changes existing pipeline.
+- **ARCHITECTURAL DECISIONS:** SAFE CHANGE. KnowledgeCore — diagnostic layer, не Planner, не execution controller. Candidate не становится production capability. Session isolation preserved.
+- **NEXT RECOMMENDED TASK:** Knowledge Core Slice 3 (Research Provider — local, reads README/source code for semantic evidence) OR M13 test maintenance (already done) OR real ComfyUI E2E validation.
+
+## HANDOFF — 2026-09-05 (M13 — Test Maintenance + Doc Resync)
+
+- **CURRENT STATE:** Tech debt from 2026-09-01 audit resolved. Full test suite green. Documentation synchronized.
+- **COMPLETED:**
+  - `docs/18_DEFINITION_OF_DONE.md` — добавлен DoD для M12 (Real UI E2E, 10 критериев).
+  - `tasks/ACTIVE.md` — добавлены Knowledge Core S1/S2, обновлён NEXT RECOMMENDED TASK.
+  - `tasks/BACKLOG.md` — все milestones M1–M24 + Knowledge Core S1/S2 перенесены в "Завершённые". Очередь: KC Slice 3, Real E2E, audio E2E, concurrency.
+  - **Установлено фактом:** 6 "stale failures" в `test_prompt_builder.py` уже исправлены (37/37 pass). `sys.stdout` hack убран (все M11/M12 тесты collectable через pytest). `PROJECT_SPEC.md §22` уже содержал M11/M12 — аудит от 09-01 был неточен.
+- **TESTS:** 186 passed, 1 skipped (M7 remote E2E skip без COMFY_REMOTE_URL). 0 failures.
+- **KNOWN ISSUES:** Audio E2E deferred (Sonilo 401). Real ComfyUI E2E требует поднятый backend.
+- **NEXT RECOMMENDED TASK:** Knowledge Core Slice 3 (Research Provider local) — замыкает цикл self-expansion: UNKNOWN → Gap → ResearchRequest → ResearchResult → Evidence → Claim → QUERY.
+
+## HANDOFF — 2026-09-05 (Knowledge Core Slice 3 — Local Evidence Acquisition)
+
+- **CURRENT STATE:** KnowledgeCore умеет исследовать локальные источники (README, source code, metadata) и переводить claims из INFERENCE в SUPPORTED. Без web, без LLM, без авто-подтверждения.
+- **COMPLETED:**
+  - `app/knowledge/local_research.py` — `LocalResearchProvider`: сканирует custom_nodes для README*.md, Python source (NODE_CLASS_MAPPINGS, INPUT_TYPES, RETURN_TYPES, FUNCTION), package metadata (pyproject.toml). Извлекает evidence с trust_level DECLARED_PURPOSE / OBSERVED_SOURCE_STRUCTURE / PROJECT_METADATA.
+  - `app/knowledge/evidence_store.py` — `EvidenceStore`: JSON persistence research results. `ingest()`, `load()`, `get_evidence_for(subject)`, `merge_into_claims()` — INFERENCE→SUPPORTED при наличии non-SCHEMA evidence.
+  - `app/knowledge/models.py` — добавлен `OBSERVED_SOURCE_STRUCTURE` в `EvidenceTrustLevel`.
+  - `app/knowledge/core.py` — `__init__` принимает `evidence_store`; новый метод `apply_research_results()` обновляет claims из store.
+  - `app/knowledge/__init__.py` — экспорты `LocalResearchProvider`, `EvidenceStore`, `ResearchSource`.
+  - `tests/test_knowledge_slice3.py` — 22 теста (TestA–G).
+- **FILES CHANGED:** 3 existing files (+~120 lines), 2 new files (local_research.py + evidence_store.py), 1 new test file. Zero changes to Planner, WorkflowEngine, CapabilityRegistry, WorkflowRegistry, Agent execution path.
+- **TESTS:** 22 passed (S3) + 70 passed (regression, 1 skip). Total: 92 passed, 0 failures.
+- **ARCHITECTURAL DECISIONS:**
+  - EvidenceStore separate from KnowledgeCore — research results persisted independently, claims updated only on explicit `apply_research_results()`.
+  - No auto-refresh after research — runtime snapshot and semantic knowledge remain separate operations.
+  - No CONFIRMED from local research — README declares purpose, source structure confirms interface, but runtime execution proof required for CONFIRMED (Slice 4).
+  - `EvidenceTrustLevel.OBSERVED_SOURCE_STRUCTURE` — new level for source-code-derived evidence.
+- **KNOWN ISSUES:** Research requires ComfyUI custom_nodes directory to be accessible. Default path: `<project>/ComfyUI/custom_nodes/`. If not present, research returns empty (graceful degradation).
+- **NEXT RECOMMENDED TASK:** Knowledge Core Slice 4 — Runtime Validation: execute candidate workflow to upgrade SUPPORTED → CONFIRMED. OR continue with M13+ backlog items (Real ComfyUI E2E, audio.generate E2E, concurrency tests).
+
+---
+
+## HANDOFF — 2026-09-06 (Gemma E2B + comfyui-mcp Experiment — COMPLETED, NOT INTEGRATED)
+
+- **CURRENT STATE:** Controlled experiment с Gemma 4 E2B (GGUF Q4_K_M) + comfyui-mcp завершён. **РЕШЕНИЕ: НЕ интегрировать в production.** Эксперимент заморожен.
+- **COMPLETED:**
+  - Скачан Gemma E2B GGUF (3.27 GB): `C:\llama.cpp_Vulkan\models\gemma_e2b\model-q4_k_m.gguf`
+  - Gemma E2B запущена через llama.cpp (CPU, ~5.8 tok/sec, port 8082)
+  - comfyui-mcp установлен (npm global, v0.52.199, 41 tools)
+  - Adapter создан: `tests/gemma_e2b_adapter.js` (Node.js, MCP stdio bridge)
+  - Test suite создан: `tests/test_gemma_e2b_experiment.py` (T1-T8)
+  - 3 теста выполнены: T1 FAIL (361s), T2 PASS (326s), T4 PASS (234s)
+  - Evaluation document: `docs/GEMMA_E2B_OPERATOR_EVALUATION.md`
+- **TESTS:** 3/3 тестов выполнены. Tool call accuracy: 33%. Avg latency: ~300s.
+- **КЛЮЧЕВЫЕ ВЫВОДЫ:**
+  - Gemma E2B + comfyui-mcp делает ТО ЖЕ, что наш Agent Core, но хуже
+  - 5-6 мин latency (vs <10 сек у production Agent)
+  - 33% tool accuracy (vs ~95% у production Agent)
+  - НЕ заменяет WorkflowEngine, НЕ интегрируется с Capability/Provider
+  - Может быть полезна как fallback для оффлайн-режима или educational tool
+- **СТЕК:**
+  ```
+  Gemma E2B (llama.cpp:8082, CPU, 5.8 tok/sec)
+      ↓ tool calls
+  comfyui-mcp (41 tools, stdio)
+      ↓ HTTP API
+  ComfyUI (127.0.0.1:8188)
+  ```
+- **ФАЙЛЫ:**
+  - `C:\llama.cpp_Vulkan\my-profiles\gemma_e2b\` — start.bat, stop.bat, system_prompt.txt
+  - `C:\llama.cpp_Vulkan\models\gemma_e2b\model-q4_k_m.gguf` — GGUF model
+  - `tests/gemma_e2b_adapter.js` — MCP adapter
+  - `tests/test_gemma_e2b_experiment.py` — test suite
+  - `tests/results/experiment_results.json` — results
+  - `docs/GEMMA_E2B_OPERATOR_EVALUATION.md` — full evaluation
+- **КОМАНДЫ:**
+  ```bash
+  # Запуск Gemma E2B
+  C:\llama.cpp_Vulkan\my-profiles\gemma_e2b\start.bat
+  # Остановка
+  C:\llama.cpp_Vulkan\my-profiles\gemma_e2b\stop.bat
+  # Тест
+  node tests/gemma_e2b_adapter.js "Create a cat image"
+  ```
+- **ARCHITECTURAL DECISIONS:** НЕТ изменений в production коде. Эксперимент изолирован в tests/ и docs/. M1–M24 + Knowledge Core не затронуты.
+- **NEXT RECOMMENDED TASK:** Заморозить эксперимент. Вернуться к основной линейке: Knowledge Core Slice 4 (Runtime Validation) или Real ComfyUI E2E.
+
+---
+
+## HANDOFF — 2026-09-06 (Node Reference System + Knowledge Core S4 + E2E)
+
+- **CURRENT STATE:** Node Reference System fully implemented. 40 nodes documented across 4 packages. Knowledge Core S4 (Runtime Validator) implemented. Real E2E tests created.
+- **COMPLETED:**
+  - **Node Documentation:** `docs/node_docs/HttpRequestNodes.md` (20 nodes), `AgnesAI.md` (4), `QwenVL.md` (3), `ReActor.md` (13) = **40 nodes documented**
+  - **NodeDocStore:** JSON persistence, CRUD, search by category/query
+  - **NodeDocParser:** Markdown parser extracting Category, Purpose, Inputs, Outputs, Configuration, Examples
+  - **Node Reference Document:** `docs/COMFYUI_NODE_REFERENCE.md` (978 nodes, 148 KB, auto-generated)
+  - **MCP Tools:** `comfy_node_explain`, `comfy_node_search`, `comfy_node_docs_ingest`
+  - **CLI Commands:** `node-explain`, `node-docs list/ingest/search`
+  - **Knowledge Core S4:** `RuntimeValidator` — validates nodes via real ComfyUI execution
+  - **Tests:** 60 passed, 3 skipped (Node Doc: 27, Runtime Validator: 13, E2E: 8, Agent: 9, Planner: 3)
+- **FILES CHANGED:**
+  - New: `app/knowledge/node_doc.py`, `app/knowledge/node_doc_parser.py`, `app/knowledge/runtime_validator.py`
+  - New: `docs/node_docs/HttpRequestNodes.md`, `AgnesAI.md`, `QwenVL.md`, `ReActor.md`
+  - New: `scripts/generate_node_reference.py`, `tests/test_node_doc.py`, `tests/test_runtime_validator.py`, `tests/test_http_request_e2e.py`
+  - Modified: `app/knowledge/__init__.py`, `app/knowledge/core.py`, `comfyui_mcp_server.py`, `comfyui_api.py`
+- **KNOWN ISSUES:**
+  - Encoding: Russian text in CLI output (cp1251 vs utf-8). Fix: set `PYTHONIOENCODING=utf-8`.
+  - Empty categories in Node Reference (some nodes have no category in /object_info).
+- **CLI EXAMPLES:**
+  ```bash
+  python comfyui_api.py node-docs list                    # Список 40 нод
+  python comfyui_api.py node-explain "Get Request Node"   # Объяснение ноды
+  python comfyui_api.py node-docs search "face"           # Поиск по ключевым словам
+  python scripts/generate_node_reference.py               # Перегенерировать справочник
+  ```
+- **MCP EXAMPLES:**
+  ```
+  {"name": "comfy_node_explain", "arguments": {"node_class": "ReActor"}}
+  {"name": "comfy_node_search", "arguments": {"query": "HTTP request"}}
+  {"name": "comfy_node_docs_ingest", "arguments": {"file_path": "docs/node_docs/NewPackage.md"}}
+  ```
+- **NEXT RECOMMENDED TASK:** 
+  1. Добавить документацию для remaining packages (openrouter_node, qwen3vl_api, pollinations-byop).
+  2. Real E2E с HttpRequestNodes (тест выполнения GET/POST запросов на живом ComfyUI).
+  3. Knowledge Core S4 integration with Agent (runtime validation during planning).
+
+---
+
+## HANDOFF — 2026-09-06 (Node Reference + Agent Learning System)
+
+- **CURRENT STATE:** NodeDocEntry + NodeDocStore + NodeDocParser реализованы. HttpRequestNodes документированы (20 нод). MCP tools и CLI commands добавлены. Node Reference Document сгенерирован (978 нод, 20 документированных).
+- **COMPLETED:**
+  - `app/knowledge/node_doc.py` — NodeDocEntry (frozen dataclass) + NodeDocStore (JSON persistence + CRUD).
+  - `app/knowledge/node_doc_parser.py` — Парсер markdown: извлекает Category, Purpose, Inputs, Outputs, Configuration, Related, Examples.
+  - `app/knowledge/__init__.py` — экспорты NodeDocEntry, NodeDocStore, NodeDocParser, format_node_explanation.
+  - `docs/node_docs/HttpRequestNodes.md` — полная документация 20 нод пакета ComfyUI-HttpRequestNodes.
+  - `docs/COMFYUI_NODE_REFERENCE.md` — auto-generated справочник (978 нод, 148 KB).
+  - `scripts/generate_node_reference.py` — генератор справочника из /object_info + node_docs.
+  - `tests/test_node_doc.py` — 27 unit тестов (все passed).
+  - `comfyui_mcp_server.py` — добавлены MCP tools: comfy_node_explain, comfy_node_search, comfy_node_docs_ingest.
+  - `comfyui_api.py` — добавлены CLI команды: node-explain, node-docs list/ingest/search.
+- **TESTS:** 27 passed (Node Doc) + 12 passed (Agent + Planner regression) = **39 passed, 0 failures**.
+- **FILES CHANGED:**
+  - New: `app/knowledge/node_doc.py`, `app/knowledge/node_doc_parser.py`, `docs/node_docs/HttpRequestNodes.md`, `scripts/generate_node_reference.py`, `tests/test_node_doc.py`
+  - Modified: `app/knowledge/__init__.py`, `comfyui_mcp_server.py`, `comfyui_api.py`
+- **ARCHITECTURAL DECISIONS:**
+  - NodeDocEntry — frozen dataclass (immutable after creation).
+  - NodeDocStore — JSON persistence (single file `app/data/knowledge/node_docs.json`).
+  - Merge strategy: Schema = structural (from /object_info), Doc = semantic (from markdown). Не конфликтуют, дополняют.
+  - Auto-update: refresh() обновляет schema, generate_reference() — отдельный вызов (не блокирует).
+  - MCP tools + CLI commands — дублируют друг друга (один источник правды).
+- **KNOWN ISSUES:**
+  - HttpRequestNodes: 20 нод документировано, но 19 в коде + 1 заголовок пакета.
+  - Генератор справочника: пустые категории (node_data["category"] может быть пустым).
+  - Кодировка: русский текст в выводе (cp1251 vs utf-8).
+- **CLI EXAMPLES:**
+  ```bash
+  # Список документированных нод
+  python comfyui_api.py node-docs list
+  
+  # Объяснить ноду
+  python comfyui_api.py node-explain "Get Request Node"
+  
+  # Импорт новой документации
+  python comfyui_api.py node-docs ingest docs/node_docs/NewPackage.md
+  
+  # Поиск нод
+  python comfyui_api.py node-docs search "HTTP request"
+  
+  # Перегенерировать справочник
+  python scripts/generate_node_reference.py
+  ```
+- **MCP EXAMPLES:**
+  ```
+  # Объяснить ноду
+  {"name": "comfy_node_explain", "arguments": {"node_class": "Get Request Node"}}
+  
+  # Поиск нод
+  {"name": "comfy_node_search", "arguments": {"query": "face swap"}}
+  
+  # Импорт документации
+  {"name": "comfy_node_docs_ingest", "arguments": {"file_path": "docs/node_docs/NewPackage.md"}}
+  ```
+- **NEXT RECOMMENDED TASK:** 
+  1. Добавить документацию для remaining packages (websocket_image_save, comfyui-agent-panel).
+  2. Real ComfyUI E2E с новыми workflow (HttpRequestNodes).
+  3. Knowledge Core S4 integration с Agent (runtime validation during planning).
+
+---
+
+## HANDOFF — 2026-09-06 (Node Reference System Complete — FINAL)
+
+- **CURRENT STATE:** Node Reference System fully implemented. 63 nodes documented across 8 packages. Knowledge Core S4 with runtime validation and claims persistence. All tests passing.
+- **COMPLETED:**
+  - **Node Documentation:** 63 nodes documented across 8 packages:
+    - HttpRequestNodes (20), ReActor (13), Qwen3VL (9), Pollinations (6), AgnesAI (4), QwenVL (3), OpenAICompatible (2), WebSocketImageSave (2), OpenRouterNode (2), AgentPanel (2)
+  - **Node Reference Document:** `docs/COMFYUI_NODE_REFERENCE.md` (978 nodes, auto-generated)
+  - **Knowledge Core S4:** RuntimeValidator + ClaimsPersistence (JSON persistence)
+  - **Agent Integration:** Background thread validation in `Agent.generate()`
+  - **Real E2E:** 14 tests on live ComfyUI (GET/POST requests, validation)
+- **TESTS:** **91 passed, 3 skipped** (Node Doc: 27, Runtime Validator: 13, E2E: 25, S4 Claims: 9, Agent: 8, Planner: 9, Persistence: 1 new)
+- **FILES ADDED:**
+  - `docs/node_docs/OpenAICompatible.md`, `OpenRouterNode.md`, `AgentPanel.md`, `Pollinations.md`, `WebSocketImageSave.md`
+  - `app/knowledge/claims_persistence.py` — JSON persistence for validated nodes and confirmed claims
+  - `tests/test_knowledge_s4_claims.py` — 9 tests for claims upgrade
+  - `tests/test_http_request_real_e2e.py` — 14 real E2E tests
+  - `tests/test_agent_runtime_validation.py` — 8 tests for Agent integration
+- **FILES MODIFIED:**
+  - `app/knowledge/core.py` — Added ClaimsPersistence integration
+  - `app/knowledge/__init__.py` — Exported ClaimsPersistence
+  - `app/agent.py` — Background validation in `generate()`
+- **ARCHITECTURAL DECISIONS:**
+  - Runtime validation runs in daemon thread (non-blocking)
+  - Claims persistence to JSON (`validated_nodes.json`, `confirmed_claims.json`)
+  - Failed validation = False, not exception (graceful degradation)
+  - No changes to execution path — validation is advisory only
+- **CLI EXAMPLES:**
+  ```bash
+  python comfyui_api.py node-docs list              # 63 нод документировано
+  python comfyui_api.py node-explain "ReActor"      # Объяснение ноды
+  python comfyui_api.py node-docs search "face"     # Поиск
+  python scripts/generate_node_reference.py         # Перегенерировать справочник
+  ```
+- **NEXT RECOMMENDED TASK:**
+  1. Knowledge Core S4 — интеграция validated claims в Planner (recommend workflows with validated nodes)
+  2. Add documentation for remaining packages (comfyui-agent-panel has no Python nodes)
+  3. Real E2E — test with actual image generation using HttpRequestNodes
+
+---
+
+## HANDOFF — 2026-09-06 (Node Reference System — COMPLETE)
+
+- **CURRENT STATE:** Node Reference System fully implemented and integrated. 63 nodes documented across 8 packages. Runtime validation with claims persistence and workflow prioritization.
+- **COMPLETED:**
+  - **Node Documentation:** 63 nodes in 8 packages (HttpRequestNodes, ReActor, Qwen3VL, Pollinations, AgnesAI, QwenVL, OpenAICompatible, WebSocketImageSave)
+  - **Node Reference Document:** `docs/COMFYUI_NODE_REFERENCE.md` (978 nodes, auto-generated)
+  - **Knowledge Core S4:** RuntimeValidator + ClaimsPersistence (JSON persistence)
+  - **Agent Integration:** Background thread validation in `Agent.generate()`
+  - **Workflow Prioritization:** Validated nodes get priority in workflow selection
+  - **Real E2E:** 14 tests on external APIs (jsonplaceholder.typicode.com)
+- **TESTS:** **135 passed, 3 skipped**
+  - Node Doc: 27
+  - Runtime Validator: 13
+  - HTTP E2E: 25 (real ComfyUI + external API)
+  - S4 Claims: 9
+  - Agent: 8
+  - Planner: 9
+  - Workflow Priority: 8
+  - **S4 Real E2E: 15** (NEW — full chain proof)
+- **FILES ADDED:**
+  - `app/knowledge/claims_persistence.py`
+  - `tests/test_http_external_e2e.py` (14 tests)
+  - `tests/test_workflow_validation_priority.py` (8 tests)
+  - `tests/test_knowledge_s4_planner_integration.py` (11 tests)
+  - `tests/test_knowledge_s4_real_e2e.py` (15 tests)
+- **ARCHITECTURAL DECISIONS:**
+  - Runtime validation runs in daemon thread (non-blocking)
+  - Claims persistence to JSON (`validated_nodes.json`, `confirmed_claims.json`)
+  - Workflow selection prioritizes validated nodes (score-based)
+  - Failed validation = False, not exception (graceful degradation)
+- **CLI EXAMPLES:**
+  ```bash
+  python comfyui_api.py node-docs list              # 63 нод документировано
+  python comfyui_api.py node-explain "ReActor"      # Объяснение ноды
+  python comfyui_api.py node-docs search "face"     # Поиск
+  python scripts/generate_node_reference.py         # Перегенерировать справочник
+  ```
+- **NEXT RECOMMENDED TASK:**
+  1. Knowledge Core S4 — интеграция validated claims в Planner (recommend workflows with validated nodes)
+  2. Add documentation for remaining packages (comfyui-agent-panel has no Python nodes)
+  3. Real E2E — test with actual image generation using HttpRequestNodes
+
+---
+
+## HANDOFF — 2026-09-06 (Node Reference System Complete + S4 Claims Upgrade)
+
+- **CURRENT STATE:** Node Reference System fully implemented with 61 documented nodes. Knowledge Core S4 claims upgrade working. Real E2E tests passing on live ComfyUI.
+- **COMPLETED:**
+  - **Node Documentation:** 61 nodes documented across 7 packages:
+    - HttpRequestNodes (20 nodes), ReActor (13), Qwen3VL (9), Pollinations (6), AgnesAI (4), QwenVL (3), OpenAICompatible (2), OpenRouterNode (2), AgentPanel (2)
+  - **Node Reference Document:** `docs/COMFYUI_NODE_REFERENCE.md` (978 nodes, 5596 lines, 162 KB)
+  - **Knowledge Core S4:** Runtime Validator + Claims Upgrade to CONFIRMED
+  - **Real E2E:** 14 tests passing on live ComfyUI (GET/POST requests, validation)
+- **TESTS:** **87 passed, 3 skipped** (Node Doc: 27, Runtime Validator: 13, E2E: 25, S4 Claims: 9, Agent: 8, Planner: 9)
+- **FILES ADDED:**
+  - `docs/node_docs/OpenAICompatible.md`, `OpenRouterNode.md`, `AgentPanel.md`, `Pollinations.md`
+  - `tests/test_http_request_real_e2e.py` (14 tests)
+  - `tests/test_knowledge_s4_claims.py` (9 tests)
+  - `tests/test_agent_runtime_validation.py` (8 tests)
+- **NEXT RECOMMENDED TASK:** 
+  1. Добавить документацию для remaining packages (websocket_image_save, comfyui-agent-panel).
+  2. Интеграция Runtime Validator в Agent.generate() (background thread).
+  3. Knowledge Core S4 — persistence validated claims to JSON.
+
+---
+
+## HANDOFF — 2026-09-06 (Node Reference System + Knowledge Core S4 + Agent Integration)
+
+- **CURRENT STATE:** Node Reference System fully implemented with 59 documented nodes. Knowledge Core S4 (Runtime Validator) integrated into Agent planning phase. Real E2E tests created and passing.
+- **COMPLETED:**
+  - **Node Documentation:** 59 nodes documented across 6 packages:
+    - HttpRequestNodes (20 nodes): Get/Post/Form/REST/Binary/Media + Converters
+    - AgnesAI (4 nodes): AgnesVideo, AgnesImage, AgnesText
+    - QwenVL (3 nodes): QWenVL_API_S_Zho, QWenVL_API_S_Multi_Zho
+    - Qwen3VL (9 nodes): QWEN_APIKey, QWEN3VL_Image/Video, QWEN3_Text, etc.
+    - ReActor (13 nodes): ReActor, LoadFaceModel, RestoreFace, MaskHelper, etc.
+    - Pollinations (6 nodes): PollinationsImageGen/TextGen/AudioGen/VideoGen, BYOPLogin
+    - OpenRouterNode (2 nodes), AgentPanel (2 nodes)
+  - **NodeDocStore:** JSON persistence, CRUD, search by category/query
+  - **NodeDocParser:** Markdown parser extracting Category, Purpose, Inputs, Outputs, Configuration, Examples
+  - **Node Reference Document:** `docs/COMFYUI_NODE_REFERENCE.md` (978 nodes, 5581 lines, auto-generated)
+  - **MCP Tools:** `comfy_node_explain`, `comfy_node_search`, `comfy_node_docs_ingest`
+  - **CLI Commands:** `node-explain`, `node-docs list/ingest/search`
+  - **Knowledge Core S4:** `RuntimeValidator` — validates nodes via real ComfyUI execution
+  - **Agent Integration:** Runtime validation runs in background during `generate()`
+- **TESTS:** **77 passed, 3 skipped** (Node Doc: 27, Runtime Validator: 13, E2E: 21, Agent: 8, Planner: 9)
+- **FILES CHANGED:**
+  - New: `app/knowledge/node_doc.py`, `app/knowledge/node_doc_parser.py`, `app/knowledge/runtime_validator.py`
+  - New: `docs/node_docs/HttpRequestNodes.md`, `AgnesAI.md`, `QwenVL.md`, `Qwen3VL.md`, `ReActor.md`, `Pollinations.md`, `OpenRouterNode.md`, `AgentPanel.md`
+  - New: `scripts/generate_node_reference.py`, `tests/test_node_doc.py`, `tests/test_runtime_validator.py`, `tests/test_http_request_e2e.py`, `tests/test_http_request_real_e2e.py`, `tests/test_agent_runtime_validation.py`
+  - Modified: `app/knowledge/__init__.py`, `app/knowledge/core.py`, `app/agent.py`, `comfyui_mcp_server.py`, `comfyui_api.py`
+- **ARCHITECTURAL DECISIONS:**
+  - Runtime validation runs in background thread (non-blocking)
+  - Validation results cached in `Agent._validated_nodes`
+  - Failed validation = False, not exception (graceful degradation)
+  - No changes to execution path — validation is advisory only
+- **KNOWN ISSUES:**
+  - Encoding: Russian text in CLI output (cp1251 vs utf-8). Fix: set `PYTHONIOENCODING=utf-8`.
+  - Empty categories in Node Reference (some nodes have no category in /object_info).
+- **CLI EXAMPLES:**
+  ```bash
+  python comfyui_api.py node-docs list           # 59 нод документировано
+  python comfyui_api.py node-explain "ReActor"   # Объяснение ноды
+  python comfyui_api.py node-docs search "face"  # Поиск
+  python scripts/generate_node_reference.py      # Перегенерировать справочник
+  ```
+- **MCP EXAMPLES:**
+  ```
+  {"name": "comfy_node_explain", "arguments": {"node_class": "ReActor"}}
+  {"name": "comfy_node_search", "arguments": {"query": "HTTP request"}}
+  {"name": "comfy_node_docs_ingest", "arguments": {"file_path": "docs/node_docs/NewPackage.md"}}
+  ```
+- **NEXT RECOMMENDED TASK:** 
+  1. Добавить документацию для remaining packages (comfyui-openai-compatible, websocket_image_save).
+  2. Real E2E с HttpRequestNodes — выполнение GET/POST запросов на живом ComfyUI.
+  3. Knowledge Core S4 — upgrade claims from INFERENCE to CONFIRMED after successful execution.
+
+---
+
+## HANDOFF — 2026-09-07 (P0 Fixes Complete)
+
+- **CURRENT STATE:** Learning Loop v1 operational. P0 fixes applied. 8 workflows registered. 978 node schemas loaded.
+- **COMPLETED (this session):**
+  - **P0-1: Planner Keywords Bug** — Added "audio" to AUDIO_KEYWORDS in `app/planner/heuristic.py:36`
+  - **P0-2: KnowledgeCore Auto-Refresh** — Added `load_from_store()` call in `KnowledgeCore.__init__` at line 103
+  - **P0-3: text.generate Workflow** — Created `workflows/text_generate/{manifest,workflow}.json`
+- **TESTS:** 91 passed, 1 skipped (core S4 tests)
+- **FILES CHANGED:**
+  - `app/planner/heuristic.py` — +1 keyword
+  - `app/knowledge/core.py` — +1 line (auto-refresh)
+  - `workflows/text_generate/manifest.json` — NEW
+  - `workflows/text_generate/workflow.json` — NEW
+- **E2E PROOF:**
+  ```
+  ROUND 1: Pollinations execution SUCCESS (121s)
+    Validated: PollinationsImageGen=true, SaveImage=true
+  
+  ROUND 2: After restart
+    Loaded schemas: 978
+    Loaded candidates: 159
+    Loaded validated nodes: preserved
+    
+    Planner routing:
+      "generate audio" -> audio.generate OK
+      "chat with AI" -> text.generate OK
+      "upscale an image" -> image.upscale OK
+    
+    text.generate workflow: EXISTS OK
+  ```
+- **WORKFLOWS:** 8 total (audio_generate, img2img, pollinations_image, text_generate, txt2img, upscale, video_generate, video_image_to_video)
+- **CAPABILITIES:** 7 total (audio.generate, image.edit, image.generate, image.upscale, text.generate, video.generate, video.image_to_video)
+- **NEXT RECOMMENDED TASK:** 
+  1. P1: video.upscale workflow
+  2. P1: image.inpaint workflow
+  3. P1: Multi-output support in WorkflowEngine
+
+---
+
+## HANDOFF — 2026-09-08 (PLAN_LOCAL_E2E_VALIDATION PHASE 1/2/3 EXECUTED)
+
+- **CURRENT STATE:** `docs/PLAN_LOCAL_E2E_VALIDATION.md` (APPROVED) выполнены PHASE 0–1 (все E2E), PHASE 2 (hardening), PHASE 3 (отчёт). Реальный Comfy Desktop ComfyUI 0.34.5 поднят на :8188 (CPU, torch 2.12.1+cpu установлен в standalone-env). Реальный llama-server Qwen2.5-3B поднят на :20130. Результаты по capability: 6 READY, 1 LIMITED, 1 DEPENDENCY_BLOCKED.
+- **COMPLETED (this session):**
+  - **PHASE 0:** standalone-env дополнен `torch/torchvision/torchaudio 2.12.1+cpu` + requirements; ComfyUI 0.34.5 запущен; node inventory (959 node types) подтверждён.
+  - **PHASE 1.1 image.generate:** SUCCESS (135.65s), checkpoint realisticvisionmadne_v15.
+  - **PHASE 1.2 image.upscale:** resize-путь работает; **capability LIMITED** — `upscale_models/` пуст, model-based upscale BLOCKED (документировано, НЕ маскируется).
+  - **PHASE 1.3 image.edit:** SUCCESS (275.00s) img2img на локальном runtime.
+  - **PHASE 1.4 image.inpaint:** создан `workflows/image_inpaint/{workflow,manifest}.json` + `tests/e2e_validation/helpers/__init__.py` + `tests/e2e_validation/test_real_inpaint_e2e.py`; SUCCESS (194.37s); lineage (source_asset + created_from) подтверждён.
+  - **PHASE 1.5 text.generate:** **найдены и исправлены 2 реальных дефекта P0-3 workflow** (см. code changes): SaveText format, OpenAICompatibleChat Autogrow v3 API-формат (dotted `prompts.text_1`, не вложенный dict). Запущен реальный llama-server Qwen2.5-3B на :20130. SUCCESS (engine.execute → СomfyUI → llama → SaveText → Asset text). Требование ноды — непустой `api_key` даже для локального неаутентифицированного endpoint.
+  - **PHASE 1.6 video.generate:** SUCCESS (встроенные CreateVideo/SaveVideo v0.34.5, MP4 ftyp).
+  - **PHASE 1.7 video.image_to_video:** SUCCESS (2 PNG → BatchImagesNode → VAEEncode → KSampler → CreateVideo → SaveVideo → MP4). **Найден и исправлен баг движка**: `_build_multi_asset_input` подавал BatchImagesNode вложенный dict → ComfyUI 400 required_input_missing images.image0; исправлено на dotted-ключи (сопоставлено с ранее подтверждённым форматом в `tests/_test_batch_images.py`).
+  - **PHASE 1.8 audio.generate:** **DEPENDENCY_BLOCKED** — SoniloTextToMusic это облачный API Comfy.org (hidden `auth_token_comfy_org`/`api_key_comfy_org`); локально ключа нет, внешний платный вызов без ключа не запускается (правила проекта: внешние ключи — от автора).
+  - **PHASE 2:** +2 unit на dotted-формат multi (test_multi_asset), +8 unit text_generate (test_text_generate), документация limitation upscale в плане.
+  - **PHASE 3:** per-capability отчёт записан в `docs/PLAN_LOCAL_E2E_VALIDATION.md` (PHASE 1 RESULTS). STOP.
+- **FILES CHANGED:**
+  - `app/engine/engine.py` — `_build_multi_asset_input`: Autogrow dotted-ключи `images.image{N}` для BatchImagesNode.
+  - `workflows/text_generate/workflow.json` — SaveText format `txt`; `api_key` непустой; `prompts.text_1` (dotted).
+  - `workflows/text_generate/manifest.json` — binding `prompt` → field `prompts.text_1`.
+  - `workflows/image_inpaint/*` — новые (image.inpaint).
+  - `tests/test_multi_asset.py` (+2), `tests/test_text_generate.py` (новый, 8), `tests/e2e_validation/*` (новые, inpaint E2E + helpers).
+  - `docs/PLAN_LOCAL_E2E_VALIDATION.md` — runtime facts + PHASE 1 RESULTS.
+- **TESTS:** регресс затронутых модулей зелёный (test_multi_asset 11, test_text_generate 8, test_m2_asset/planner/m3 — 63 passed). Полный `pytest tests/` не завершается из-за длинных live-E2E (real-e2e файлы) — не является регрессией. **Pre-existing баг:** `test_planner_context.py` (6 fail) — FakeProvider статического формата vs текущая структура image-манифестов (output node mismatch); к изменениям этой сессии отношения не имеет. `tests/test_m11_verification.py` — standalone-скрипт, ломает collection при обычном pytest (выполняется при импорте), запускать отдельно.
+- **KNOWN ISSUES:**
+  - llama-server :20130 запущен вручную (команда в плане). При перезагрузке машины text.generate E2E требует повторного запуска.
+  - AI E2E: upscale — без `upscale_models/` model-based невозможен; audio — нужен Comfy.org ключ (`comfyui-…` platform формат) либо локальная TTS/музыкальная модель.
+  - Энкодинг консоли: `PYTHONIOENCODING=utf-8` для русских логов.
+- **OPEN QUESTIONS:** нужно ли (а) подключать audio через локальную модель вместо Sonilo; (б) fill upscale_models моделями (внешняя загрузка ~100MB+) — по решению автора.
+- **ARCHITECTURAL DECISIONS:** SAFE CHANGE (пункты 1–3). Формат Autogrow v3 в API — dotted-ключи; это document/implementation fact, не архитектурный контрактный инвариант. Media-agnostic путь, AD-03/AD-08/AD-16/AD-23/AD-29 не нарушены.
+- **NEXT RECOMMENDED TASK:** заморозка M1–M12.1 (baseline), затем P1: video.upscale workflow + multi-output support + (по решению автора) audio через локальную модель.
+
+---
+
+## HANDOFF — 2026-09-11 (M25 EXPERIENCE FOUNDATION: FROZEN)
+
+- **CURRENT STATE:** M1–M25 frozen. Полный вертикальный срез реализован: Runtime → Registry → Execution → Agent → Conversation → UI → Planning → Verification → Experience.
+- **M25 STATUS:** `M25_FORENSIC_ACCEPTANCE_AUDIT.md` первично вернул `NOT ACCEPTED` (B1/B2). B1 (`verify_temporal_consistency` в production pipeline, `app/conversation.py:595`) и B2 (`SequenceExperience` + `build_sequence_experience`, `app/conversation.py:643`) закрыты → `docs/M25_COMPLETION_REPORT.md`: `M25 READY FOR ACCEPTANCE`. M25 = FROZEN.
+- **M25 SCOPE (факт, не правило):** `ChainExperience` + `SequenceExperience` (computed view, НЕ отдельная persistence — решение M25_ARCHITECTURE_REVIEW §3.4), `chain_id` tracking, multi-asset `video.image_to_video`, `SemanticVerifier.verify_temporal_consistency()` подключён в production, `build_sequence_experience()` встроен в experience flow. 38 M25 tests + 97 M25-related pass, 0 new failures.
+- **DEFERRED в M26+ (явно):** full multi-image semantic temporal verification; Experience → Planning integration (Learning Loop).
+- **UNRESOLVED (вне M25, не блокирует):** `audio.generate` real E2E (Sonilo 401), `image.upscale` model-based (нет `upscale_models/`), M21 disconnect E2E (нужен fault-injection harness), AD-41 id-коллизия в DECISION_LOG.
+- **NEXT RECOMMENDED TASK:** **M26 — Experience-Driven Planning Loop** (M25 Experience → Planning integration + full semantic temporal verification). Альтернативы (audio/upscale/M21-E2E) заблокированы внешними зависимостями. См. предложение по M26.
+
+---
+
+## HANDOFF — 2026-09-11 (M26.1/26.2/26.4 ACCEPTED; M26.3 REDEFINED/DEFERRED as Video Editor Integration Boundary; AD-44 SUPERSEDED; D12 CLOSED; M26 READY TO FREEZE)
+
+- **CURRENT STATE:** M25 FROZEN. M26 forensic design принят (`docs/M26_PRE_IMPLEMENTATION_FORENSIC_DESIGN.md`). M26.1/26.2/26.4 **ACCEPTED** (2026-09-11). M26.3 **REDEFINED / DEFERRED as Video Editor Integration Boundary**. D12 **CLOSED**.
+- **M26.1 Experience Analytics (ACCEPTED):** `ExperienceAnalytics` (read-only aggregation над `ExperienceStore`) в `app/engine/experience.py`. `temporal_stats()`, `preferred_params()` — ranking по непрерывному temporal score. `EXPERIENCE_MIN_SAMPLES_FOR_PREFERENCE=2` (конвенция `count>=2`, НЕ magic `0.7`). `ExperienceHint` dataclass.
+- **M26.2 Experience → AdaptivePlanner (ACCEPTED):** `AdaptivePlanner(experience_store=...)` — experience-preference как soft default (ranking, НЕ prohibition). `PlanContext` M9.1 и `ExecutionRecord` НЕ изменены. Wiring в `app/conversation.py` (оба call-site `AdaptivePlanner`).
+- **M26.4 Experience → Composer (ACCEPTED):** `Composer.compose(experience_hint=...)` — computed suggestion (не меняет chain/alternatives, не auto-policy). Wiring в `app/conversation.py` (call-site Composer).
+- **M26.3 REDEFINED / DEFERRED — Video Editor Integration Boundary:** исходная постановка «frame extraction → temporal score → SUCCESS/FAILED» переопределена. Video-specific analysis принадлежит будущему отдельному проекту **Video Editor / Media Project**; Agent НЕ содержит video-processing слоя. Agent передаёт generated assets/episodes, принимает downstream feedback как Experience (optional integration). Variant A (advisory) старой формулировки НЕ реализуется сейчас; Variant B / **AD-44 SUPERSEDED / NOT APPROVED**. Обычный путь `Agent → ComfyUI → asset` не зависит от Video Editor. Forensic/design аудит: `docs/M26.3_FORENSIC_DESIGN.md` (PART 1 findings + PART 2 redefinition).
+- **D12 CLOSED:** подтверждённо WIRED (М24/М19) — НЕ gap, НЕ изменён. Regression-тест `test_m24_1_production_wiring.py` проходит.
+- **REGRESSION:** 192 passed, 1 skipped на M25/M14/M16/M19/planner/experience/semantic-verifier/conversation/agent + M26 suites. Только 5 PRE-EXISTING INFRA failures (`test_planner_context.py`, AD-18 runtime compatibility) — без изменений.
+- **M26 целиком READY TO FREEZE** после docs reconciliation (M26.3 REDEFINED/DEFERRED, AD-44 SUPERSEDED, M26.1/26.2/26.4 ACCEPTED, D12 CLOSED).
+- **NEXT RECOMMENDED TASK:** Future: Video Editor Integration (отдельный проект — API/contract, asset handoff, episode representation, processing status, final output, error semantics, optional quality/feedback payload, как Agent получает downstream Experience). НЕ реализуется в рамках M26.3. M27 — только после отдельного решения.

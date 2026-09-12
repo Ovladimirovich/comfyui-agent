@@ -22,6 +22,10 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Optional
 
+# M25.3: порог оценки temporal consistency (симметрично semantic threshold 0.5).
+# Результат ниже порога трактуется как провал verification (failure path).
+TEMPORAL_CONSISTENCY_THRESHOLD = 0.5
+
 
 @dataclass
 class SemanticVerificationResult:
@@ -32,11 +36,19 @@ class SemanticVerificationResult:
     suggested_params: dict | None = None  # рекомендуемые параметры для retry
     raw_response: str | None = None  # сырой ответ vision model (для debug)
     error: str | None = None  # ошибка verification (если vision API недоступен)
+    # M25.3: temporal-specific fields
+    temporal_score: float | None = None  # 0.0–1.0 (continuity между кадрами)
+    temporal_issues: list[str] = field(default_factory=list)  # проблемы temporal consistency
 
     @property
     def ok(self) -> bool:
         """True если score >= 0.5 и нет критических issues."""
         return self.score >= 0.5 and self.error is None
+
+    @ok.setter
+    def ok(self, value: bool) -> None:
+        # property writable for test mocking; no-op for normal use
+        pass
 
 
 class SemanticVerifierError(RuntimeError):
@@ -249,4 +261,177 @@ class SemanticVerifier:
                 matches_intent=True,
                 error=f"failed to parse vision response: {e}",
                 raw_response=str(response),
+            )
+
+    def verify_temporal_consistency(
+        self,
+        sequence_assets: list[str],
+        request: str = "",
+        capability: str = "video.image_to_video",
+    ) -> SemanticVerificationResult:
+        """Проверить temporal consistency последовательности image assets.
+
+        M25.3: Анализирует визуальную continuity между consecutive кадрами
+        через vision model. Возвращает temporal_score 0.0–1.0.
+
+        Архитектурные инварианты:
+        - НЕ создаёт Asset — только read-only анализ
+        - НЕ влияет на canonical ingest (происходит после verification)
+        - Fallback: при отсутствии API ключа → temporal_score=None (neutral)
+        """
+        if not sequence_assets:
+            return SemanticVerificationResult(
+                score=0.0,
+                matches_intent=False,
+                temporal_score=0.0,
+                temporal_issues=["empty sequence"],
+                issues=["empty sequence"],
+            )
+
+        if len(sequence_assets) < 2:
+            return SemanticVerificationResult(
+                score=0.5,
+                matches_intent=True,
+                temporal_score=None,
+                temporal_issues=["single asset — temporal check N/A"],
+            )
+
+        if not self.api_key:
+            return SemanticVerificationResult(
+                score=0.5,
+                matches_intent=True,
+                temporal_score=None,
+                error="vision API not configured (no OPENROUTER_API_KEY)",
+            )
+
+        # Проверка существования файлов
+        missing = [p for p in sequence_assets if not os.path.exists(p)]
+        if missing:
+            return SemanticVerificationResult(
+                score=0.0,
+                matches_intent=False,
+                temporal_score=0.0,
+                temporal_issues=[f"missing asset: {os.path.basename(m)}" for m in missing],
+                issues=[f"missing asset: {os.path.basename(m)}" for m in missing],
+            )
+
+        # Sample frame pairs (first, middle, last) для efficiency
+        indices = self._sample_indices(len(sequence_assets), max_samples=5)
+        pairs = [(indices[i], indices[i + 1]) for i in range(len(indices) - 1)]
+
+        if not pairs:
+            return SemanticVerificationResult(
+                score=0.5,
+                matches_intent=True,
+                temporal_score=None,
+                temporal_issues=["insufficient frames for comparison"],
+            )
+
+        frame_scores = []
+        temporal_issues = []
+
+        for i, j in pairs:
+            pair_result = self._compare_frame_pair(
+                sequence_assets[indices[i]],
+                sequence_assets[indices[j]],
+                request,
+                capability,
+            )
+            frame_scores.append(pair_result.score)
+            if pair_result.temporal_issues:
+                temporal_issues.extend(pair_result.temporal_issues)
+
+        if not frame_scores:
+            return SemanticVerificationResult(
+                score=0.5,
+                matches_intent=True,
+                temporal_score=None,
+            )
+
+        temporal_score = sum(frame_scores) / len(frame_scores)
+        temporal_score = max(0.0, min(1.0, temporal_score))
+
+        return SemanticVerificationResult(
+            score=temporal_score,
+            matches_intent=temporal_score >= 0.5,
+            temporal_score=temporal_score,
+            temporal_issues=temporal_issues if temporal_issues else None,
+            issues=temporal_issues if temporal_issues else None,
+        )
+
+    def _sample_indices(self, total: int, max_samples: int = 5) -> list[int]:
+        """Выбрать индексы для sample: first, middle(s), last."""
+        if total <= 2:
+            return list(range(total))
+        indices = [0]  # first
+        step = max(1, (total - 2) // (max_samples - 2))
+        for i in range(1, total - 1):
+            if i % step == 0:
+                indices.append(i)
+                if len(indices) >= max_samples - 1:
+                    break
+        indices.append(total - 1)  # last
+        return indices[:max_samples]
+
+    def _compare_frame_pair(
+        self,
+        frame_a_path: str,
+        frame_b_path: str,
+        request: str,
+        capability: str,
+    ) -> SemanticVerificationResult:
+        """Сравнить два consecutive frame для temporal continuity."""
+        if not self.api_key:
+            return SemanticVerificationResult(
+                score=0.5,
+                matches_intent=True,
+                temporal_score=0.5,
+            )
+
+        try:
+            with open(frame_a_path, "rb") as f:
+                data_a = base64.b64encode(f.read()).decode("utf-8")
+            with open(frame_b_path, "rb") as f:
+                data_b = base64.b64encode(f.read()).decode("utf-8")
+        except Exception as e:
+            return SemanticVerificationResult(
+                score=0.0,
+                matches_intent=False,
+                temporal_score=0.0,
+                temporal_issues=[f"failed to read frame pair: {e}"],
+            )
+
+        prompt = (
+            "Ты проверяешь temporal consistency между двумя consecutive кадрами видео.\n"
+            "Оцени визуальную continuity: насколько плавно кадр B переходит из кадра A.\n"
+            "Критерии: отсутствие резких скачков, сохранение объектов, плавность движения.\n\n"
+            "Верни ТОЛЬКО JSON:\n"
+            '{"score": 0.0-1.0, "temporal_issues": ["issue1, ..."] or null}\n\n'
+            "score >= 0.7 = good continuity, 0.5–0.7 = acceptable, < 0.5 = poor"
+        )
+
+        user_content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data_a}"}},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data_b}"}},
+        ]
+
+        try:
+            response = self._call_vision_api(prompt, user_content)
+            content = response["choices"][0]["message"]["content"]
+            obj = json.loads(content)
+            score = max(0.0, min(1.0, float(obj.get("score", 0.5))))
+            issues = obj.get("temporal_issues") or []
+            return SemanticVerificationResult(
+                score=score,
+                matches_intent=score >= 0.5,
+                temporal_score=score,
+                temporal_issues=issues if issues else None,
+            )
+        except Exception as e:
+            return SemanticVerificationResult(
+                score=0.5,
+                matches_intent=True,
+                temporal_score=0.5,
+                temporal_issues=[f"vision API error: {e}"],
             )

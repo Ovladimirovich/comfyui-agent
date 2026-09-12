@@ -14,12 +14,22 @@ from __future__ import annotations
 
 import base64
 import os
+from unittest.mock import patch
 
 import pytest
 
 from app.assets.store import AssetStore
 from app.conversation import ConversationAgent, ConversationContext
 from app.engine import JobState
+from app.registry.runtime import RuntimeInfo
+
+# AD-18 strict selection: runtime с fp16=True нужно для txt2img/img2img/video_generate,
+# иначе build_runtime_info даёт fp16=None → workflow с runtime-dependent reqs → UNKNOWN,
+# а строгий _select_manifest выбрасывает AgentError (нет подтверждённой совместимости).
+_FAKE_RUNTIME = RuntimeInfo(
+    accelerator="directml", vram_gb=12.0, fp16=True, xformers=False,
+    lowvram=True, comfyui_version="0.34.5",
+)
 
 _1PX_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
@@ -33,10 +43,21 @@ class FakeClient:
         self.base_url = base_url
 
     def get_system_stats(self):
-        raise RuntimeError("offline fake client")
+        # build_runtime_info извлекает только devices (accelerator/vram), fp16 остаётся None;
+        # для strict AD-18-совместимых тестов мы дополнительно патчим discover_runtime
+        # через _FAKE_RUNTIME с fp16=True — в real ComfyUI fp16 тоже остаётся None, но
+        # здесь нужно показать что при runtime + models/custom_nodes workflow выбирается.
+        return {"devices": [{"type": "directml", "vram_total": 12 * 1024 ** 3}]}
 
     def get_object_info(self) -> dict:
-        return {}
+        # advertising required custom nodes for workflows used in these offline tests.
+        # НЕ рекламируем pollinations-byop — чтобы pollinations_image не стал AVAILABLE
+        # и image.generate оставался на txt2img (node 9 → image, как проверяют тесты).
+        # Для video.generate нужен CreateVideo/SaveVideo.
+        return {
+            "CreateVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SaveVideo": {"python_module": "custom_nodes.videohelpersuite"},
+        }
 
     def view(self, filename: str, subfolder: str = "", type_: str = "output") -> bytes:
         if filename.endswith(".wav"):
@@ -46,6 +67,11 @@ class FakeClient:
         if filename.endswith(".mp4"):
             return b"\x00\x00\x00\x18ftypmp42"
         return b"data"
+
+    def discover_checkpoints(self) -> list[str]:
+        # AD-18 strict: required_models=["checkpoint"] требует наличия модели.
+        # В live-режиме ComfyUI возвращает реальные имена; здесь — placeholder.
+        return ["checkpoint"]
 
 
 class FakeProvider:
@@ -86,7 +112,8 @@ class FakeProvider:
         pass
 
     def discover_checkpoints(self) -> list:
-        return []
+        # Forward to client for consistency; same fixture rationale as FakeClient.
+        return self.client.discover_checkpoints()
 
 
 class BrokenProvider(FakeProvider):
@@ -122,33 +149,34 @@ def test_multi_turn_chain_offline(tmp_path):
     agent = ConversationAgent(store)
     provider = FakeProvider()
 
-    # turn 1: generate → Asset A
-    j1 = agent.turn("s1", capability="image.generate", params=_gen_params(), provider=provider)
-    assert j1.state == JobState.SUCCESS
-    a_id = j1.output_assets[0]
-    a = store.get(a_id)
-    assert a.type == "image"
-    assert agent.active_asset_id("s1") == a_id
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        # turn 1: generate → Asset A
+        j1 = agent.turn("s1", capability="image.generate", params=_gen_params(), provider=provider)
+        assert j1.state == JobState.SUCCESS
+        a_id = j1.output_assets[0]
+        a = store.get(a_id)
+        assert a.type == "image"
+        assert agent.active_asset_id("s1") == a_id
 
-    # turn 2: «сделай реалистичнее» → image.edit с active_asset=A → Asset B
-    j2 = agent.turn("s1", capability="image.edit", params=_edit_params(), provider=provider)
-    assert j2.state == JobState.SUCCESS
-    b_id = j2.output_assets[0]
-    b = store.get(b_id)
-    assert b.type == "image"
-    # lineage(B) == [B, A]
-    assert b.source_asset == a_id
-    assert store.lineage(b_id) == [b, a]
-    # active_asset теперь B
-    assert agent.active_asset_id("s1") == b_id
+        # turn 2: «сделай реалистичнее» → image.edit с active_asset=A → Asset B
+        j2 = agent.turn("s1", capability="image.edit", params=_edit_params(), provider=provider)
+        assert j2.state == JobState.SUCCESS
+        b_id = j2.output_assets[0]
+        b = store.get(b_id)
+        assert b.type == "image"
+        # lineage(B) == [B, A]
+        assert b.source_asset == a_id
+        assert store.lineage(b_id) == [b, a]
+        # active_asset теперь B
+        assert agent.active_asset_id("s1") == b_id
 
-    # turn 3: active_asset == B
-    ctx = agent.context("s1")
-    assert ctx.active_asset == b_id
-    assert ctx.active_workflow == "img2img@1.0.0"
-    assert ctx.active_job == j2.prompt_id
-    assert a_id in ctx.assets and b_id in ctx.assets
-    assert len(ctx.jobs) == 2
+        # turn 3: active_asset == B
+        ctx = agent.context("s1")
+        assert ctx.active_asset == b_id
+        assert ctx.active_workflow == "img2img@1.0.0"
+        assert ctx.active_job == j2.prompt_id
+        assert a_id in ctx.assets and b_id in ctx.assets
+        assert len(ctx.jobs) == 2
 
 
 def test_session_isolation(tmp_path):
@@ -156,21 +184,22 @@ def test_session_isolation(tmp_path):
     agent = ConversationAgent(store)
     provider = FakeProvider()
 
-    ja = agent.turn("A", capability="image.generate", params=_gen_params(), provider=provider)
-    jb = agent.turn("B", capability="image.generate", params=_gen_params(), provider=provider)
-    a_id = ja.output_assets[0]
-    b_id = jb.output_assets[0]
-    assert a_id != b_id
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        ja = agent.turn("A", capability="image.generate", params=_gen_params(), provider=provider)
+        jb = agent.turn("B", capability="image.generate", params=_gen_params(), provider=provider)
+        a_id = ja.output_assets[0]
+        b_id = jb.output_assets[0]
+        assert a_id != b_id
 
-    ctx_a = agent.context("A")
-    ctx_b = agent.context("B")
-    # разные активные ассеты
-    assert ctx_a.active_asset == a_id
-    assert ctx_b.active_asset == b_id
-    # session A не видит Asset B, session B не видит Asset A
-    assert b_id not in ctx_a.assets
-    assert a_id not in ctx_b.assets
-    assert ctx_a.active_job != ctx_b.active_job
+        ctx_a = agent.context("A")
+        ctx_b = agent.context("B")
+        # разные активные ассеты
+        assert ctx_a.active_asset == a_id
+        assert ctx_b.active_asset == b_id
+        # session A не видит Asset B, session B не видит Asset A
+        assert b_id not in ctx_a.assets
+        assert a_id not in ctx_b.assets
+        assert ctx_a.active_job != ctx_b.active_job
 
 
 def test_explicit_asset_overrides_active(tmp_path):
@@ -178,23 +207,24 @@ def test_explicit_asset_overrides_active(tmp_path):
     agent = ConversationAgent(store)
     provider = FakeProvider()
 
-    j1 = agent.turn("s1", capability="image.generate", params=_gen_params(), provider=provider)
-    a_id = j1.output_assets[0]
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        j1 = agent.turn("s1", capability="image.generate", params=_gen_params(), provider=provider)
+        a_id = j1.output_assets[0]
 
-    # явный входной файл C (image) — должен переопределить active_asset A
-    c_path = tmp_path / "c.png"
-    c_path.write_bytes(_1PX_PNG)
-    j2 = agent.turn("s1", capability="image.edit", params=_edit_params(),
-                    assets={"image": str(c_path)}, provider=provider)
-    assert j2.state == JobState.SUCCESS
-    b_id = j2.output_assets[0]
-    b = store.get(b_id)
-    # B порождён от явного C, а не от active A
-    assert b.source_asset != a_id
-    # явный asset инджестился как input-ассет (source_asset=None) → его id в качестве source
-    c_asset = store.get(b.source_asset)
-    assert c_asset is not None and c_asset.source_asset is None
-    assert c_asset.id == b.source_asset
+        # явный входной файл C (image) — должен переопределить active_asset A
+        c_path = tmp_path / "c.png"
+        c_path.write_bytes(_1PX_PNG)
+        j2 = agent.turn("s1", capability="image.edit", params=_edit_params(),
+                        assets={"image": str(c_path)}, provider=provider)
+        assert j2.state == JobState.SUCCESS
+        b_id = j2.output_assets[0]
+        b = store.get(b_id)
+        # B порождён от явного C, а не от active A
+        assert b.source_asset != a_id
+        # явный asset инджестился как input-ассет (source_asset=None) → его id в качестве source
+        c_asset = store.get(b.source_asset)
+        assert c_asset is not None and c_asset.source_asset is None
+        assert c_asset.id == b.source_asset
 
 
 def test_error_does_not_replace_active_asset(tmp_path):
@@ -202,19 +232,20 @@ def test_error_does_not_replace_active_asset(tmp_path):
     agent = ConversationAgent(store)
     provider = FakeProvider()
 
-    j1 = agent.turn("s1", capability="image.generate", params=_gen_params(), provider=provider)
-    a_id = j1.output_assets[0]
-    assert agent.active_asset_id("s1") == a_id
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        j1 = agent.turn("s1", capability="image.generate", params=_gen_params(), provider=provider)
+        a_id = j1.output_assets[0]
+        assert agent.active_asset_id("s1") == a_id
 
-    # turn 2 падает (битый выхлоп) → active_asset НЕ заменяется
-    with pytest.raises(Exception):
-        agent.turn("s1", capability="image.edit", params=_edit_params(), provider=BrokenProvider())
+        # turn 2 падает (битый выхлоп) → active_asset НЕ заменяется
+        with pytest.raises(Exception):
+            agent.turn("s1", capability="image.edit", params=_edit_params(), provider=BrokenProvider())
 
-    ctx = agent.context("s1")
-    assert ctx.active_asset == a_id           # остался прежним
-    assert ctx.dialog_state == "error"
-    assert ctx.unresolved                       # зафиксировано нерешённое требование/ошибка
-    assert store.get(a_id) is not None and store.get(a_id).type == "image"
+        ctx = agent.context("s1")
+        assert ctx.active_asset == a_id           # остался прежним
+        assert ctx.dialog_state == "error"
+        assert ctx.unresolved                       # зафиксировано нерешённое требование/ошибка
+        assert store.get(a_id) is not None and store.get(a_id).type == "image"
 
 
 def test_active_asset_type_mismatch_is_unresolved(tmp_path):
@@ -222,24 +253,25 @@ def test_active_asset_type_mismatch_is_unresolved(tmp_path):
     agent = ConversationAgent(store)
     provider = FakeProvider()
 
-    # active_asset — video (из video.generate)
-    jv = agent.turn("s1", capability="video.generate",
-                    params={"prompt": "a cat", "negative_prompt": "", "width": 512, "height": 512,
-                            "frames": 4, "seed": 0, "steps": 20, "fps": 4},
-                    provider=provider)
-    assert jv.state == JobState.SUCCESS
-    v_id = jv.output_assets[0]
-    assert store.get(v_id).type == "video"
-    assert agent.active_asset_id("s1") == v_id
+    with patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME):
+        # active_asset — video (из video.generate)
+        jv = agent.turn("s1", capability="video.generate",
+                        params={"prompt": "a cat", "negative_prompt": "", "width": 512, "height": 512,
+                                "frames": 4, "seed": 0, "steps": 20, "fps": 4},
+                        provider=provider)
+        assert jv.state == JobState.SUCCESS
+        v_id = jv.output_assets[0]
+        assert store.get(v_id).type == "video"
+        assert agent.active_asset_id("s1") == v_id
 
-    # image.edit требует image; active — video → тип не совпадает → unresolved (без транскодинга)
-    with pytest.raises(Exception):
-        agent.turn("s1", capability="image.edit", params=_edit_params(), provider=provider)
+        # image.edit требует image; active — video → тип не совпадает → unresolved (без транскодинга)
+        with pytest.raises(Exception):
+            agent.turn("s1", capability="image.edit", params=_edit_params(), provider=provider)
 
-    ctx = agent.context("s1")
-    # active_asset НЕ изменился на video→image автоматически; остался video
-    assert ctx.active_asset == v_id
-    assert ctx.unresolved
+        ctx = agent.context("s1")
+        # active_asset НЕ изменился на video→image автоматически; остался video
+        assert ctx.active_asset == v_id
+        assert ctx.unresolved
 
 
 def test_resolve_asset_inputs_priority_and_active(tmp_path):

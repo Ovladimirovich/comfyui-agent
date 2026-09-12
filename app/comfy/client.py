@@ -203,3 +203,39 @@ class ComfyClient:
     def discover_checkpoints(self) -> list:
         """Список доступных чекпоинтов (runtime discovery). Без хранения/индексации."""
         return self.list_model_options("CheckpointLoaderSimple", "ckpt_name")
+
+    # --- custom-node discovery (НЕ Model Registry) --------------------------
+
+    @staticmethod
+    def discover_custom_node_packages(client) -> dict[str, set[str]]:
+        """Обнаружить custom node packages из /object_info конкретного клиента.
+
+        Возвращает {package_name: set[node_class_names]} — например
+        {"pollinations-byop": {"PollinationsImageGen"}}.
+
+        Built-in ноды (python_module == "nodes", "nodes.*", "comfy_extras.*")
+        отфильтровываются — это ядро ComfyUI, не custom nodes. Модули вида
+        "custom_nodes.<pkg>" и "comfy_api_nodes.<pkg>" дают package = <pkg>.
+
+        Исключения из get_object_info НЕ глотаются здесь — graceful degradation
+        реализуется на уровне Agent._discover_facts() (Step 7: NodeSchemaStore cache).
+        """
+        info = client.get_object_info() or {}
+        inventory: dict[str, set[str]] = {}
+        for node_class, meta in info.items():
+            if not isinstance(meta, dict):
+                continue
+            mod = meta.get("python_module")
+            if not isinstance(mod, str) or not mod:
+                continue
+            if mod == "nodes" or mod.startswith("nodes.") or mod.startswith("comfy_extras"):
+                continue
+            parts = mod.split(".")
+            pkg = None
+            for i, part in enumerate(parts):
+                if part in ("custom_nodes", "comfy_api_nodes") and i + 1 < len(parts):
+                    pkg = parts[i + 1]
+                    break
+            if pkg:
+                inventory.setdefault(pkg, set()).add(node_class)
+        return inventory

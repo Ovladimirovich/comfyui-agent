@@ -1,0 +1,32 @@
+{
+  "id": "text_generate",
+  "version": "1.0.0",
+  "capability": "text.generate",
+  "provider": "comfyui",
+  "backend": "local_comfyui",
+  "inputs": {
+    "prompt": {"node": "1", "field": "prompts.text_1"},
+    "model": {"node": "1", "field": "model"},
+    "base_url": {"node": "1", "field": "base_url"}
+  },
+  "asset_inputs": {},
+  "outputs": {
+    "result": {"node": "2", "kind": "text"}
+  },
+  "parameters": {
+    "model": {"default": "default", "options": ["default"]},
+    "base_url": {"default": "http://127.0.0.1:20130/v1"},
+    "prompt": {"default": ""}
+  },
+  "required_models": [],
+  "required_custom_nodes": ["comfyui-openai-compatible"],
+  "min_comfyui_version": "0.0.0",
+  "requirements": {"accelerator": "any", "xformers": false, "min_vram_gb": 0, "fp16": false},
+  "limits": {
+    "max_upload_bytes": 0,
+    "max_asset_duration": 0,
+    "max_video_width": 0,
+    "max_video_height": 0,
+    "max_sequence_length": 0
+  }
+}

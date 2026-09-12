@@ -1,60 +1,65 @@
 {
-  "id": "video_image_to_video",
+  "id": "image_inpaint",
   "version": "1.0.0",
-  "capability": "video.image_to_video",
+  "capability": "image.inpaint",
   "provider": "comfyui",
   "backend": "local_comfyui",
-  "note": "M25: multi-image to video workflow. Accepts N images via LoadImage nodes, batches them via ImageBatch, encodes with VAEEncode, generates video frames with KSampler, decodes with VAEDecode, assembles with CreateVideo + SaveVideo.",
+  "note": "Local E2E: core-only inpaint workflow (no custom nodes). LoadImage + LoadImageMask -> VAEEncodeForInpaint -> KSampler (denoise 0.95) -> VAEDecode -> SaveImage. Same media-agnostic WorkflowEngine/Job/Verifier/Asset. Mask role bound to LoadImageMask channel=red.",
   "inputs": {
     "prompt": {
       "node": "2",
       "field": "text"
     },
     "negative_prompt": {
-      "node": "4",
+      "node": "3",
       "field": "text"
     },
-    "fps": {
-      "node": "7",
-      "field": "fps"
+    "seed": {
+      "node": "5",
+      "field": "seed"
     },
     "steps": {
       "node": "5",
       "field": "steps"
     },
-    "seed": {
+    "denoise": {
       "node": "5",
-      "field": "seed"
+      "field": "denoise"
     }
   },
   "asset_inputs": {
-    "images": {
+    "image": {
       "node": "10",
       "field": "image",
-      "kind": "image",
-      "multi": true,
-      "max_count": 16,
-      "load_node_template": "10",
-      "batch_node": "11",
-      "batch_field": "images"
+      "kind": "image"
+    },
+    "mask": {
+      "node": "11",
+      "field": "image",
+      "kind": "image"
     }
   },
   "outputs": {
     "result": {
-      "node": "8",
-      "kind": "video"
+      "node": "9",
+      "kind": "image"
     }
   },
   "parameters": {
-    "fps": {
-      "default": 4,
-      "min": 1,
-      "max": 30
-    },
     "steps": {
       "default": 20,
       "min": 1,
       "max": 60
+    },
+    "cfg": {
+      "default": 7,
+      "min": 1,
+      "max": 20
+    },
+    "denoise": {
+      "default": 0.95,
+      "min": 0.0,
+      "max": 1.0
     },
     "seed": {
       "default": 0,
@@ -63,7 +68,7 @@
     }
   },
   "required_models": [],
-  "required_custom_nodes": ["CreateVideo", "SaveVideo"],
+  "required_custom_nodes": [],
   "min_comfyui_version": "0.0.0",
   "requirements": {
     "accelerator": "any",
@@ -73,7 +78,10 @@
   },
   "limits": {
     "max_upload_bytes": 209715200,
-    "max_sequence_length": 16
+    "max_asset_duration": 0,
+    "max_video_width": 0,
+    "max_video_height": 0,
+    "max_sequence_length": 0
   },
   "model_requirements": [
     {

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .capability import CapabilityRegistry
+from .model import ModelKind
 from .semver import parse_version
 
 
@@ -84,6 +85,48 @@ class OutputSpec:
 
 
 @dataclass
+class ModelRequirement:
+    """Требование к модели (AD-MODEL-BINDING-001): kind ИЛИ identity, не оба.
+
+    - kind — семантический вид модели (checkpoint/lora/...): удовлетворяется
+      наличием ЛЮБОЙ модели backend'а этого вида (не выдумываем имя);
+    - identity — точное имя модели (например "cyberrealistic_v80.safetensors"):
+      удовлетворяется ТОЛЬКО точным совпадением имени (без guessing).
+    """
+
+    kind: Optional[ModelKind] = None
+    identity: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.kind is not None and self.identity is not None:
+            raise ValueError("ModelRequirement: нельзя задать оба kind и identity одновременно")
+        if self.kind is None and self.identity is None:
+            raise ValueError("ModelRequirement: требуется либо kind, либо identity")
+
+    @classmethod
+    def by_kind(cls, kind: ModelKind) -> "ModelRequirement":
+        return cls(kind=kind)
+
+    @classmethod
+    def by_identity(cls, identity: str) -> "ModelRequirement":
+        return cls(identity=identity)
+
+    def to_dict(self) -> dict:
+        if self.kind is not None:
+            return {"kind": self.kind.value}
+        return {"identity": self.identity}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ModelRequirement":
+        kind = data.get("kind")
+        identity = data.get("identity")
+        return cls(
+            kind=ModelKind(kind) if kind is not None else None,
+            identity=identity,
+        )
+
+
+@dataclass
 class Workflow:
     """Декларативное описание workflow (без исполнимого кода)."""
 
@@ -98,6 +141,12 @@ class Workflow:
     parameters: dict[str, Any] = field(default_factory=dict)
     required_models: list[str] = field(default_factory=list)
     required_custom_nodes: list[str] = field(default_factory=list)
+    # AD-MODEL-BINDING-001: typed требования к моделям (kind/identity).
+    # Заполняются из model_requirements манифеста ИЛИ миграцией из legacy
+    # required_models (contract_version=1). required_models остаётся для
+    # обратной совместимости.
+    model_requirements: list[ModelRequirement] = field(default_factory=list)
+    contract_version: int = 0
     min_comfyui_version: str = "0.0.0"
     requirements: dict[str, Any] = field(default_factory=dict)
     limits: dict[str, Any] = field(default_factory=dict)
@@ -290,6 +339,42 @@ def load_workflow(manifest_path: str | os.PathLike, capabilities: Optional[Capab
         )
 
     declared_only = bool(data.get("declared_only", False))
+
+    # AD-MODEL-BINDING-001: model requirements (typed) или миграция legacy.
+    model_requirements: list[ModelRequirement] = []
+    contract_version = 0
+    model_requirements_raw = data.get("model_requirements")
+    if model_requirements_raw is not None:
+        if not isinstance(model_requirements_raw, list):
+            return Workflow(
+                id=str(data.get("id", manifest_path.parent.name)), version=str(data.get("version", "0.0.0")),
+                capability=str(data.get("capability", "")), provider=str(data.get("provider", "")),
+                backend=str(data.get("backend", "")), status=WorkflowStatus.UNAVAILABLE,
+                reasons=[UnavailableReason.INVALID_MANIFEST], manifest_path=str(manifest_path),
+            )
+        try:
+            model_requirements = [ModelRequirement.from_dict(d) for d in model_requirements_raw]
+        except (ValueError, TypeError, AttributeError) as e:
+            return Workflow(
+                id=str(data.get("id", manifest_path.parent.name)), version=str(data.get("version", "0.0.0")),
+                capability=str(data.get("capability", "")), provider=str(data.get("provider", "")),
+                backend=str(data.get("backend", "")), status=WorkflowStatus.UNAVAILABLE,
+                reasons=[UnavailableReason.INVALID_MANIFEST],
+                manifest_path=str(manifest_path),
+            )
+        contract_version = int(data.get("contract_version", 1))
+    elif data.get("required_models"):
+        # Legacy: "checkpoint" (значение ModelKind) → kind requirement;
+        # любое другое имя — точный identity (AD-MODEL-BINDING-001).
+        for m in data["required_models"]:
+            try:
+                kind = ModelKind(m)
+            except ValueError:
+                model_requirements.append(ModelRequirement.by_identity(m))
+            else:
+                model_requirements.append(ModelRequirement.by_kind(kind))
+        contract_version = 1
+
     wf = Workflow(
         id=data["id"],
         version=data["version"],
@@ -314,6 +399,8 @@ def load_workflow(manifest_path: str | os.PathLike, capabilities: Optional[Capab
         parameters=data.get("parameters", {}),
         required_models=list(data.get("required_models", [])),
         required_custom_nodes=list(data.get("required_custom_nodes", [])),
+        model_requirements=model_requirements,
+        contract_version=contract_version,
         min_comfyui_version=data.get("min_comfyui_version", "0.0.0"),
         requirements=data.get("requirements", {}),
         limits=data.get("limits", {}),

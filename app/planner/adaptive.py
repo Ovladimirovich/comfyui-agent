@@ -44,9 +44,11 @@ class AdaptivePlanner:
         history: ExecutionHistory,
         fallback: Optional[Planner] = None,
         feedback_store: Optional["FeedbackStore"] = None,
+        experience_store: Optional["ExperienceStore"] = None,  # M26.2
     ) -> None:
         self.history = history
         self.feedback_store = feedback_store
+        self.experience_store = experience_store  # M26.2: read-only experience signal
         self.analytics = HistoryAnalytics(history, feedback_store=feedback_store)
         self.preferences = UserPreferences(self.analytics)
         self.fallback = fallback or HeuristicPlanner()
@@ -127,12 +129,26 @@ class AdaptivePlanner:
             return base_result
 
         # 4) M19: feedback weighting
+        feedback_info = ""
         if self.feedback_store is not None:
             preferred = self._feedback_weighted_params(
                 base_result.capability, context
             ) or preferred
 
-        # 5) Мержим: preferred params как дефолты, explicit из request перезаписывают
+        # 5b) M26.2: experience-derived preference (ranking, НЕ prohibition).
+        # ExperienceAnalytics читает ChainExperience (temporal/sequence signal),
+        # которого нет в ExecutionHistory. Добавляется как soft default ПОД
+        # history-preferred и explicit params. Никаких запретов capability/workflow.
+        if self.experience_store is not None:
+            from app.engine.experience import ExperienceAnalytics
+
+            exp_analytics = ExperienceAnalytics(self.experience_store)
+            exp_pref = exp_analytics.preferred_params(base_result.capability)
+            if exp_pref:
+                preferred = {**preferred, **exp_pref}
+                feedback_info += " + experience-preferred"
+
+        # 6) Мержим: preferred params как дефолты, explicit из request перезаписывают
         merged_params = {**preferred, **base_result.params}
 
         # 6) Не перезаписываем explicit prompt из request
@@ -140,7 +156,7 @@ class AdaptivePlanner:
             merged_params["prompt"] = base_result.params["prompt"]
 
         success_count = len(self.history.get_successful(base_result.capability))
-        feedback_info = " + feedback-weighted" if self.feedback_store else ""
+        feedback_info += " + feedback-weighted" if self.feedback_store else ""
         return PlanResult(
             capability=base_result.capability,
             params=merged_params,

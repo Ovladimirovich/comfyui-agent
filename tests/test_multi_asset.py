@@ -25,6 +25,10 @@ from app.registry.workflow import (
     load_workflow,
     validate_manifest,
 )
+from app.assets.store import AssetStore
+from app.engine import ExecutionPlan
+from app.engine.engine import WorkflowEngine
+from types import SimpleNamespace
 
 
 # ── Helpers ──
@@ -226,3 +230,86 @@ class TestVideoI2VManifest:
         assert wf.asset_inputs["images"].batch_field == "images"
         assert "result" in wf.outputs
         assert wf.outputs["result"].kind == "video"
+
+
+# ── Tests: build_prompt multi — Autogrow dotted format ──
+
+class TestBuildPromptMultiDotted:
+    """M25 Phase 2: BatchImagesNode (COMFY_AUTOGROW_V3) в API принимает
+    dotted-ключи 'images.image{N}', а НЕ вложенный dict 'images: {"imageN": ...}'
+    (см. comfy_api._io.build_nested_inputs — values['images.image0'] -> batched dict).
+    Баг найден на реальном локальном ComfyUI 0.34.5: при вложенном dict
+    ComfyUI возвращал 400 required_input_missing images.image0."""
+
+    def _wf(self, tmp_path):
+        manifest = {
+            "id": "wf_multi_dotted",
+            "version": "1.0.0",
+            "capability": "test.multi",
+            "provider": "comfyui",
+            "backend": "local_comfyui",
+            "workflow_path": os.path.join(
+                os.path.dirname(__file__), "..", "workflows", "video_image_to_video", "workflow.json"
+            ),
+            "inputs": {},
+            "asset_inputs": {
+                "images": {
+                    "node": "10",
+                    "field": "image",
+                    "kind": "image",
+                    "multi": True,
+                    "max_count": 16,
+                    "load_node_template": "10",
+                    "batch_node": "11",
+                    "batch_field": "images",
+                }
+            },
+            "outputs": {"result": {"node": "8", "kind": "video"}},
+            "parameters": {},
+            "required_models": ["checkpoint"],
+            "required_custom_nodes": ["CreateVideo", "SaveVideo"],
+            "min_comfyui_version": "0.0.0",
+            "requirements": {},
+            "limits": {},
+        }
+        wf_dir = tmp_path / "wf"
+        wf_dir.mkdir(parents=True, exist_ok=True)
+        src_wf = os.path.join(
+            os.path.dirname(__file__), "..", "workflows", "video_image_to_video", "workflow.json"
+        )
+        import shutil
+        shutil.copy(src_wf, wf_dir / "workflow.json")
+        manifest["workflow_path"] = "workflow.json"
+        mpath = wf_dir / "manifest.json"
+        mpath.write_text(json.dumps(manifest), encoding="utf-8")
+        return load_workflow(mpath)
+
+    def test_build_prompt_uses_dotted_keys(self, tmp_path):
+        wf = self._wf(tmp_path)
+        store = AssetStore(root=tmp_path / "store")
+        engine = WorkflowEngine(store)
+        plan = ExecutionPlan("test.multi", wf.id, wf.version)
+        refs = [SimpleNamespace(reference={"filename": "a.png"}),
+                SimpleNamespace(reference={"filename": "b.png"})]
+        prompt = engine.build_prompt(wf, plan, {"images": refs})
+
+        # два load node клона
+        assert "10_m25_0" in prompt and "10_m25_1" in prompt
+        assert prompt["10_m25_0"]["inputs"]["image"] == "a.png"
+        assert prompt["10_m25_1"]["inputs"]["image"] == "b.png"
+
+        # batch node — COMFY_AUTOGROW_V3: вложенный dict под ключом "images"
+        b11 = prompt["11"]["inputs"]
+        assert b11 == {"images": {"image0": ["10_m25_0", 0], "image1": ["10_m25_1", 0]}}
+
+    def test_build_prompt_single_asset_backward_compat(self, tmp_path):
+        wf = self._wf(tmp_path)
+        store = AssetStore(root=tmp_path / "store")
+        engine = WorkflowEngine(store)
+        plan = ExecutionPlan("test.multi", wf.id, wf.version)
+        ref = SimpleNamespace(reference={"filename": "single.png"})
+        prompt = engine.build_prompt(wf, plan, {"images": ref})
+
+        # НЕ multi: обычная подстановка filename в template node
+        assert prompt["10"]["inputs"]["image"] == "single.png"
+        assert "11" in prompt

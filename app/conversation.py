@@ -176,10 +176,25 @@ class ConversationAgent(Agent):
                 # M19: Validate and enhance via Composer (AD-41)
                 if self.composer is not None:
                     target = subtasks[-1].capability
+                    # M26.4: вычислить experience-derived hint без изменения выбора.
+                    experience_hint = None
+                    if self.experience_store is not None:
+                        from app.engine.experience import ExperienceAnalytics, ExperienceHint
+
+                        exp_analytics = ExperienceAnalytics(self.experience_store)
+                        ts = exp_analytics.temporal_stats(target)
+                        if ts is not None and ts.sample_count > 0:
+                            experience_hint = ExperienceHint(
+                                capability=target,
+                                preferred_params=exp_analytics.preferred_params(target),
+                                avg_temporal_consistency=ts.avg_score,
+                                sample_count=ts.sample_count,
+                            )
                     composition = self.composer.compose(
                         target_capability=target,
                         params=params or {},
                         available_types=set(),
+                        experience_hint=experience_hint,
                     )
                     if composition.success:
                         subtasks = composition.chain
@@ -226,6 +241,7 @@ class ConversationAgent(Agent):
                             history=self.execution_history,
                             fallback=self.planner or _default_planner(),
                             feedback_store=self.feedback_store,  # M24.1
+                            experience_store=self.experience_store,  # M26.2
                         )
 
             result = planner.plan(request, context=plan_ctx)
@@ -566,7 +582,10 @@ class ConversationAgent(Agent):
 
         result = chain.execute(subtasks, chain_id=chain_id)
 
-        # M25: verify sequence integrity после chain execution
+        # Исходный запрос пользователя (intent) — используется для верификации
+        intent = ctx.messages[0].get("turn", "") if ctx.messages else ""
+
+        # M25: verify sequence integrity после chain execution (structural check)
         sequence_ids = [s.job.output_assets[0] for s in result.steps if s.job and s.job.output_assets]
         if len(sequence_ids) >= 2:
             verifier = Verifier(self.store)
@@ -574,6 +593,29 @@ class ConversationAgent(Agent):
             if not seq_result.ok:
                 for d in seq_result.diagnostics:
                     print(f"[M25 sequence verify] {d.error_message}")
+
+        # M25.3: temporal consistency verification.
+        # Часть существующего sequence-verification блока (НЕ второй pipeline).
+        # Проверяем continuity между consecutive image-кадрами последовательности
+        # через SemanticVerifier.verify_temporal_consistency().
+        temporal_result = None
+        image_seq_paths: list[str] = []
+        for s in result.steps:
+            if s.job and s.job.output_assets:
+                aid = s.job.output_assets[0]
+                asset = self.store.get(aid)
+                if asset is not None and asset.type == "image":
+                    image_seq_paths.append(asset.path)
+        if self.semantic_verifier is not None and len(image_seq_paths) >= 2:
+            temporal_result = self.semantic_verifier.verify_temporal_consistency(
+                sequence_assets=image_seq_paths,
+                request=intent,
+                capability="video.image_to_video",
+            )
+            # M25.3: advisory signal ONLY. Низкий temporal_score НЕ превращает
+            # успешно выполненное задание в FAILED — post-hoc quality gate
+            # принадлежит downstream Video Editor (AD-44 SUPERSEDED / M26.3 REDEFINED).
+            # Canonical Asset lifecycle и состояние Job остаются неизменными.
 
         # Обновляем контекст сессии
         if chain_ctx.active_asset:
@@ -584,8 +626,7 @@ class ConversationAgent(Agent):
 
         # M25: auto-record experience после завершения chain
         if self.experience_store is not None and chain_ctx.chain_id is not None:
-            from app.engine.experience import build_chain_experience
-            intent = ctx.messages[0].get("turn", "") if ctx.messages else ""
+            from app.engine.experience import build_chain_experience, build_sequence_experience
             exp = build_chain_experience(
                 chain_id=chain_ctx.chain_id,
                 session_id=session_id,
@@ -593,6 +634,18 @@ class ConversationAgent(Agent):
                 context=ctx,
                 intent=intent,
             )
+            # M25.3+B2: temporal_consistency из результата temporal verification
+            if temporal_result is not None and temporal_result.temporal_score is not None:
+                exp.temporal_consistency = temporal_result.temporal_score
+                exp.animation_quality = (
+                    "success" if temporal_result.temporal_score >= 0.7
+                    else "poor" if temporal_result.temporal_score < 0.5
+                    else "inconsistent"
+                )
+            # M25.4: SequenceExperience (computed view) встраивается в ChainExperience
+            # (единый JSONL, без второй persistence-модели — M25_ARCHITECTURE_REVIEW §3.4)
+            seq_exp = build_sequence_experience(exp, temporal_result)
+            exp.sequence_experience = seq_exp.to_dict()
             self.experience_store.record(exp)
 
         # Возвращаем Job последнего завершённого шага
@@ -650,6 +703,7 @@ class ConversationAgent(Agent):
                         history=self.execution_history,
                         fallback=self.planner or _default_planner(),
                         feedback_store=self.feedback_store,  # M24.1
+                        experience_store=self.experience_store,  # M26.2
                     )
 
         result = planner.plan(subtask.description, context=plan_ctx)

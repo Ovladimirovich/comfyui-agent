@@ -1,0 +1,19 @@
+{
+  "1": {
+    "class_type": "PollinationsImageGen",
+    "inputs": {
+      "prompt": "a cat in space",
+      "model": "flux",
+      "width": 1024,
+      "height": 1024,
+      "seed": 42
+    }
+  },
+  "2": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["1", 0],
+      "filename_prefix": "ComfyUI"
+    }
+  }
+}

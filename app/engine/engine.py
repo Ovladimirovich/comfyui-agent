@@ -113,7 +113,7 @@ class WorkflowEngine:
         """Собрать multi-asset input: N load nodes → batch node.
 
         Для BatchImagesNode (COMFY_AUTOGROW_V3) используется формат:
-          {"image0": [node_id, 0], "image1": [node_id, 0], ...}
+          {"images": {"image0": [node_id, 0], "image1": [node_id, 0], ...}}
         Для старых ImageBatch — список ссылок:
           {"images": [[node_id, 0], ...]}
         """

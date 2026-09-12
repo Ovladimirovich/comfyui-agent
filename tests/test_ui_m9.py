@@ -28,7 +28,11 @@ class FakeClient:
         raise RuntimeError("offline fake client")
 
     def get_object_info(self):
-        return {}
+        # AD-18 strict: pollinations_image требует custom node pollinations-byop.
+        # Живой ComfyUI отдаёт её в /object_info — заявляем наличной.
+        return {
+            "PollinationsImageGen": {"python_module": "custom_nodes.pollinations-byop"},
+        }
 
     def view(self, filename, subfolder="", type_="output"):
         if filename.endswith(".wav"):
@@ -52,8 +56,11 @@ class FakeProvider:
         return "fake-prompt-id"
 
     def get_job(self, prompt_id):
+        # pollinations_image выбран потому что txt2img требует модель "checkpoint"
+        # (placeholder), которой нет в точном inventory. Node 2 — output node
+        # pollinations_image workflow (manifest outputs.result.node="2").
         return {prompt_id: {"status": {"status_str": "success"}, "outputs": {
-            "9": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
+            "2": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
         }}}
 
     def view(self, ref):
@@ -149,7 +156,9 @@ def test_ui_turn_creates_asset_and_preview():
         _, st = _get(f"{base}/api/session?session_id={sid}")
         ctx = json.loads(st)
         assert ctx["active_asset"], "active_asset должен появиться"
-        assert ctx["active_workflow"].startswith("txt2img@")
+        # pollinations_image выигрывает selection при offline:
+        # txt2img UNAVAILABLE (required_models=["checkpoint"] — placeholder, не exact identity)
+        assert ctx["active_workflow"].startswith("pollinations_image@")
         aid = ctx["active_asset"]
         status, data = _get(f"{base}/asset/{aid}")
         assert status == 200

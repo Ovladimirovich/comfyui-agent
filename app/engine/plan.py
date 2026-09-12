@@ -18,6 +18,7 @@ class ExecutionPlan:
     backend: str = "local_comfyui"
     params: dict = field(default_factory=dict)          # логич. параметры (prompt, steps, …)
     asset_bindings: dict = field(default_factory=dict)  # role -> asset_id (входные ассеты)
+    model_bindings: dict = field(default_factory=dict)  # resolve'd model requirements (AD-MODEL-BINDING-001)
     original_prompt: Optional[str] = None                # исходный текст пользователя (M11.6)
     enhanced_prompt: Optional[str] = None                # улучшенный промпт (M11.6)
     prompt_source: Optional[str] = None                  # источник enhancement: heuristic/llm/fallback (M11.6)

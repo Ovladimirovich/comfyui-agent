@@ -58,9 +58,55 @@ Status: PROPOSED | APPROVED
   - **Cluster Gateway (A) отложен** как следующий инфраструктурный этап после B. Gateway НЕ выбирает capability — только определяет "где выполнить" на основе здоровья/нагрузки backends.
   - **M19 не начинать** — сначала архитектурное исследование B.
 - **Reason:** M18 уже создал исполнительный механизм для многошаговых задач. Следующий естественный вопрос — научить систему самой выводить необходимые шаги из намерения пользователя, сохраняя CapabilityRegistry/WorkflowRegistry как источник истины. B логически продолжает M18.
+
+## 2026-09-11 — M25 Experience Foundation: FROZEN
+
+- **Decision ID:** M25 (milestone freeze)
+- **Context:** M25 прошла `M25_FORENSIC_ACCEPTANCE_AUDIT.md` (первично `NOT ACCEPTED` по B1/B2), затем B1/B2 закрыты (`docs/M25_COMPLETION_REPORT.md` 2026-09-11: `M25 READY FOR ACCEPTANCE`). Требуется зафиксировать M25 как frozen в состоянии проекта.
+- **Decision:**
+  - M25 = FROZEN. `ChainExperience` + `SequenceExperience` (computed view, НЕ отдельная persistence — решение M25_ARCHITECTURE_REVIEW §3.4), `chain_id` tracking, multi-asset `video.image_to_video`, `verify_temporal_consistency()` в production pipeline (`app/conversation.py:595`), `build_sequence_experience()` в experience flow (`app/conversation.py:643`).
+  - **AD-37/38/39/40 (M25_PROPOSAL) и AD-MODEL-BINDING-001** — сохраняют статус PROPOSED→утверждены в рамках M25 (Experience as Data, Sequence as Metadata, Multi-Asset flag, Experience Persistence).
+  - **Semantic temporal verification (full, multi-image)** и **Experience → Planning integration** явно DEFERRED в M26+ (решение MASTER §5.4 / M25_ARCHITECTURE_REVIEW §5.4 / NEXT_MILESTONE §7.2).
+- **Reason:** Архитектурные инварианты M25 сохранены (Experience = факт, не правило; media-agnostic; single JSONL persistence). Закрытие B1/B2 не меняет публичные контракты M1–M24.
+- **Affected components:** `app/engine/experience.py`, `app/engine/semantic_verifier.py`, `app/conversation.py`, `workflows/video_image_to_video/manifest.json`, `tests/test_m25_b1_b2_integration.py`.
+- **Author/Agent:** architect-review / opencode
+- **Status:** FROZEN
+
+> **DOC ISSUE (RESOLVED-DOCUMENTED, не блокирует):** обнаружен AD-id коллизия — `AD-41` использовался дважды: (a) **Composer architecture** — каноническое значение, подтверждено кодом (`app/planner/composer.py:3`, `capability_graph.py:3`, `composition_result.py:3`); (b) **Intent → Capability Planning Architecture** (2026-09-03) и **Backend-Scoping DEFERRED** (2026-09-08) — исторически записаны под тем же лейблом. Код НЕ переименовывается. Backend-Scoping остаётся DEFERRED и при следующем архитектурном решении получит отдельный ID (предлагается AD-43).
 - **Affected components:** Исследование затронет `app/planner/`, `app/registry/`, `app/engine/chain.py`, `docs/PROJECT_SPEC.md`, `docs/17_ROADMAP.md`.
 - **Author/Agent:** architect-review
 - **Status:** APPROVED
+
+## 2026-09-11 — M26.1/26.2/26.4 IMPLEMENTED (Experience-Driven Planning Loop, partial)
+
+- **Decision ID:** M26 (partial implementation)
+- **Context:** M26 forensic design (`docs/M26_PRE_IMPLEMENTATION_FORENSIC_DESIGN.md`) принят. M25 FROZEN. Утверждены M26.1 (Experience Analytics), M26.2 (Experience → AdaptivePlanner), M26.4 (Experience → Composer suggestions). M26.3 (output-video temporal verification) ЗАБЛОКИРОВАН (нет frame-extraction, output-quality-gate semantics требуют AD, threshold `0.7` не имеет контракта).
+- **Decision:**
+  - **M26.1:** добавлен `ExperienceAnalytics` (read-only aggregation над `ExperienceStore`) в `app/engine/experience.py`. `temporal_stats()`, `preferred_params()` — ranking по непрерывному temporal score. `EXPERIENCE_MIN_SAMPLES_FOR_PREFERENCE=2` (переиспользует конвенцию `count>=2`, без magic `0.7`). `ExperienceHint` dataclass.
+  - **M26.2:** `AdaptivePlanner(experience_store=...)` применяет experience-preference как **soft default** (ranking, НЕ prohibition). `PlanContext` M9.1 и `ExecutionRecord` НЕ изменены. Нет magic threshold.
+  - **M26.4:** `Composer.compose(experience_hint=...)` добавляет computed suggestion (не меняет chain/alternatives, не auto-policy).
+  - **M26.3:** НЕ реализован. Не добавлены cv2/ffmpeg/frame-extraction/новый verifier/новый AD.
+  - **D12 (FeedbackStore → AdaptivePlanner):** подтверждённо WIRED (из M24/M19); НЕ изменён, НЕ является gap. AC7 = regression-тест `test_m24_1_production_wiring.py` проходит.
+- **Reason:** M26.1/26.2/26.4 реализованы в рамках существующего AD-контура (AD-36/37/38/39, M9.1 FROZEN, single SemanticVerifier path). M26.3 заблокирован architectural решениями (B1/B2/B3 из forensic design).
+- **Affected components:** `app/engine/experience.py`, `app/planner/adaptive.py`, `app/planner/composer.py`, `app/conversation.py`, `app/engine/__init__.py`, `tests/test_m26_*.py`.
+- **Author/Agent:** opencode
+- **Status:** M26.1/26.2/26.4 **ACCEPTED** (2026-09-11). M26.3 **REDEFINED / DEFERRED as Video Editor Integration Boundary** (см. запись ниже). M26 целиком **READY TO FREEZE** после docs reconciliation. D12 **CLOSED** (wiring существует, не изменять).
+
+## 2026-09-11 — M26.3 REDEFINED (Video Editor Integration Boundary) + AD-44 SUPERSEDED
+
+- **Decision ID:** M26.3 (redefinition) / AD-44 (disposition)
+- **Context:** У проекта появится отдельный проект **Video Editor / Media Project** (монтаж/сборка episodes, timeline, transitions, audio/sync, effects, final render/mastering, анализ и обработка готового video, video-specific frame extraction и media processing). ComfyUI Agent НЕ должен превращаться в видеоредактор. Исходная постановка M26.3 («frame extraction → temporal score → SUCCESS/FAILED») признана принадлежащей downstream media boundary.
+- **Decision:**
+  - **M26.3 REDEFINED** как *Downstream Media / Video Editor Integration Boundary*: Agent передаёт generated assets/episodes, Video Editor выполняет media-specific обработку и возвращает результат/feedback как downstream Experience. Agent НЕ содержит video-processing слоя.
+  - **Variant A (advisory, старой формулировки):** НЕ реализуется сейчас (video-specific signal требует media-processing слоя Video Editor).
+  - **Variant B / AD-44:** **SUPERSEDED / NOT APPROVED** — исходная post-hoc FAILED semantics признана принадлежащей downstream boundary.
+  - **Ownership** Agent ↔ Video Editor явно разделён (таблица в `docs/M26.3_FORENSIC_DESIGN.md` PART 2 §20).
+  - **Experience:** Agent может принимать downstream feedback как Experience (optional integration; обычный путь `Agent → ComfyUI → asset` НЕ зависит от Video Editor). Не менять `ExecutionRecord`/`PlanContext`.
+  - **Future: Video Editor Integration** — отдельный проект определит API/contract, asset handoff, episode representation, processing status, final output, error semantics, optional quality/feedback payload.
+- **Reason:** Video-specific analysis — responsibility будущего Video Editor, НЕ Agent Core. Это сохраняет media-agnostic invariant (AD-03) и не добавляет cv2/ffmpeg/frame-extraction в Agent.
+- **Affected components:** только документация (`docs/M26.3_FORENSIC_DESIGN.md`, `docs/M26_COMPLETION_REPORT.md`, `docs/MASTER_DEVELOPMENT_ROADMAP.md`, `docs/M26_PRE_IMPLEMENTATION_FORENSIC_DESIGN.md`, `tasks/ACTIVE.md`, `tasks/COMPLETED.md`, `engineering/HANDOFF.md`).
+- **Author/Agent:** opencode
+- **Status:** M26.3 **REDEFINED / DEFERRED**. AD-44 **SUPERSEDED / NOT APPROVED**. M26.1/26.2/26.4 **ACCEPTED**. M26 **READY TO FREEZE**.
 
 ## 2026-09-03 — AD-41 (Intent → Capability Planning Architecture)
 
@@ -140,3 +186,23 @@ Status: PROPOSED | APPROVED
 - **Affected components:** `app/infrastructure/` (новый модуль), `tests/test_comfy_cli_adapter.py`, `docs/PROJECT_SPEC.md` (§24).
 - **Author/Agent:** OpenCode (auto-implemented)
 - **Status:** APPROVED (зафиксировано в PROJECT_SPEC §24)
+
+## 2026-09-08 — AD-41 (Backend-Scoping Deferred)
+
+- **Decision ID:** AD-41
+- **Context:** Extended Discovery (Steps 1-7 + §H.4 mapping gap) завершился корректно. При аудите обнаружен потенциал для backend-scoping: `Workflow.backend` существует как поле манифеста, но НЕ используется для gating selection или dispatch. Все текущие manifests declare `backend="local_comfyui"`, включая `pollinations_image` (external API через BYOP-узел, но исполняемый локально). AD-01 определяет v1 как 1:1 (`comfyui` ↔ `local_comfyui`). `select_candidate()`, `evaluate_compatibility()`, `_select_manifest()` — все backend-agnostic.
+- **Decision:**
+  - **ENFORCEMENT DEFERRED:** Gating selection по `Workflow.backend` ≠ selected `BackendSpec.kind` НЕ реализуется на данном этапе.
+  - **Rationale:**
+    1. AD-01 явно определяет v1 как 1:1 mapping — enforcement redundant при single-backend deployment.
+    2. Все 9 существующих workflows корректно declare `backend="local_comfyui"` — ни один не нарушает контракт.
+    3. `pollinations_image` семантически корректен: он исполняется ЧЕРЕЗ локальный ComfyUI (BYOP узел делает HTTP-запрос к pollinations API), поэтому `backend="local_comfyui"` верен.
+    4. Реальное различие между workflows уже захвачено другими полями: `required_custom_nodes`, `required_models`, `requirements.min_vram_gb`.
+    5. premature enforcement создал бы ложные UNAVAILABLE statuses при добавлении новых workflow без multi-backend infrastructure.
+  - **EXTENSION POINT сохранён:** TODO-заметка в `app/agent.py:313` фиксирует gap и направление для future AD.
+  - **Workflow.backend остаётся metadata** — используется для dispatch identity (`provider.backend_id`) и логирования, но НЕ для selection gating.
+  - **Triggers для future implementation:** (a) добавление `remote_comfyui` или `cloud_comfyui` backend в `BackendCatalog`; (b) workflow с `backend != "local_comfyui"`; (c) явное требование architectural review.
+- **Reason:** Current single-backend deployment makes enforcement redundant. Deferred enforcement avoids breaking new workflows that legitimately run on local ComfyUI (even if they call external APIs via BYOP nodes). The gap is documented and will be addressed when multi-backend support is introduced.
+- **Affected components:** `app/agent.py` (TODO note at line 313), `docs/EXTENDED_DISCOVERY_DESIGN.md` (§G Backend-Scoping Boundary), `engineering/DECISION_LOG.md` (этот записЬ). НЕТ изменений в `app/registry/selection.py`, `app/registry/compatibility.py`, `app/registry/backends.py`.
+- **Author/Agent:** Agnes-2.5-flash (extended discovery audit + AD formulation)
+- **Status:** APPROVED (deferred enforcement)

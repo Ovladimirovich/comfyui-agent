@@ -77,7 +77,7 @@ ComfyUI Agent — самостоятельный мультимодальный 
 - G1. Управлять ComfyUI как execution engine через единый media-agnostic pipeline.
 - G2. Поддерживать мультимодальный ввод (text/image/video/audio) и комбинации ассетов.
 - G3. Декларативно описывать workflow через manifest (без node-id у LLM).
-- G4. Работать на реальном локальном ComfyUI (AMD DirectML) без mock на финальной валидации.
+- G4. Работать на реальном локальном ComfyUI (CPU) без mock на финальной валидации.
 - G5. Сохранять lineage между ассетами для многоходового диалога.
 - G6. Быть расширяемым: новый provider/model/workflow/capability не требует переписывания ядра.
 
@@ -487,7 +487,7 @@ UNKNOWN              → UNKNOWN (DEGRADED) — НЕ AVAILABLE
 
 `RuntimeInfo` (реальные возможности):
 ```text
-accelerator  — directml | cuda | cpu   (v1: directml)
+accelerator  — directml | cuda | cpu   (v2: cpu)
 vram_gb      — доступный объём VRAM
 fp16         — поддержка fp16 (v1: true, --force-fp16)
 xformers     — (v1: false, --disable-xformers)
