@@ -22,6 +22,12 @@ def test_heuristic_image_default():
     assert r.capability == "image.generate"
 
 
+def test_heuristic_text():
+    r = HeuristicPlanner().plan("напиши эссе про зиму")
+    assert r.capability == "text.generate"
+    assert "prompt" in r.params
+
+
 def test_llm_planner_requires_key():
     os.environ.pop("OPENROUTER_API_KEY", None)
     try:

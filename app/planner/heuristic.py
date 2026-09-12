@@ -36,6 +36,12 @@ GENERATE_HINTS = (
 AUDIO_KEYWORDS = ("трек", "музыка", "звук", "аудио", "lo-fi", "beat", "sound")
 VIDEO_KEYWORDS = ("видео", "ролик", "animate", "video", "animation")
 
+# Text keywords → text.generate (workflow: workflows/text_generate)
+TEXT_KEYWORDS = (
+    "напиши", "сочини", "текст", "эссе", "поговори",
+    "chat", "write", "text", "essay", "haiku",
+)
+
 
 class HeuristicPlanner(Planner):
     """Keyword-based planner with context-aware edit/upscale routing."""
@@ -86,7 +92,16 @@ class HeuristicPlanner(Planner):
                     rationale=f"video_keyword: '{kw}'",
                 )
 
-        # 4. Default: image.generate
+        # 4. Text keywords → text.generate
+        for kw in TEXT_KEYWORDS:
+            if kw in req_lower:
+                return PlanResult(
+                    capability="text.generate",
+                    params={**params, "prompt": req},
+                    rationale=f"text_keyword: '{kw}'",
+                )
+
+        # 5. Default: image.generate
         return PlanResult(
             capability="image.generate",
             params={**params, "prompt": req},
