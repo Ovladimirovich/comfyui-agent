@@ -2,6 +2,7 @@
 
 Offline, deterministic. Context-aware: active_asset_type + edit/upscale hints
 bias capability selection (AD-31: planner selects capability, NOT PromptBuilder).
+S9: explicit image attach текущего turn → image.edit (AD-23 приоритет explicit).
 Extracts size/step params from request text.
 """
 from __future__ import annotations
@@ -101,7 +102,18 @@ class HeuristicPlanner(Planner):
                     rationale=f"text_keyword: '{kw}'",
                 )
 
-        # 5. Default: image.generate
+        # 5. S9: explicit image attach текущего turn → image.edit.
+        # Медиа/text-ключевые слова имеют приоритет (вложение не затеняет
+        # явный intent «сделай трек»/«напиши текст»). Если image.edit недоступен —
+        # fallback на image.generate (не резолвим несуществующую capability).
+        if ctx.explicit_asset_type == "image" and "image.edit" in ctx.capabilities:
+            return PlanResult(
+                capability="image.edit",
+                params={**params, "prompt": req},
+                rationale="explicit_image_attach",
+            )
+
+        # 6. Default: image.generate
         return PlanResult(
             capability="image.generate",
             params={**params, "prompt": req},

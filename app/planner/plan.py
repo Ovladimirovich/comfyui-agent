@@ -17,6 +17,9 @@ class PlanContext:
     capabilities: tuple[str, ...] = ()
     active_workflow: Optional[str] = None
     previous_prompt: Optional[str] = None
+    # S9: type explicit input текущего turn (AD-23: explicit > active_asset).
+    # Отличается от active_asset_type (может быть равен session.active_asset).
+    explicit_asset_type: Optional[str] = None
 
 
 @dataclass

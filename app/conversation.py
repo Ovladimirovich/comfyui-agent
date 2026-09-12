@@ -219,8 +219,13 @@ class ConversationAgent(Agent):
         #    существует независимо от LLM — planner опционален)
         if capability is None and request:
             active_asset_obj = self.active_asset(session_id)
+            # S9: explicit input текущего turn участвует в capability selection
+            # (приоритет AD-23 explicit > active_asset; session.active_asset НЕ меняется).
+            explicit_type = Agent.explicit_asset_type(assets, store=self.store)
+            effective_type = explicit_type or (active_asset_obj.type if active_asset_obj else None)
             plan_ctx = PlanContext(
-                active_asset_type=active_asset_obj.type if active_asset_obj else None,
+                active_asset_type=effective_type,
+                explicit_asset_type=explicit_type,
                 capabilities=tuple(self.capabilities()),
                 active_workflow=ctx.active_workflow,
                 previous_prompt=ctx.parameters.get("prompt"),

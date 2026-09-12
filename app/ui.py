@@ -18,9 +18,13 @@ Backend limitation: ComfyUI DirectML/CPU НЕ шлёт WS execution events — p
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import json
 import mimetypes
+import os
+import tempfile
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +36,7 @@ from app.conversation import ConversationAgent, ConversationContext
 from app.context.feedback import FeedbackRecord, FeedbackStore
 from app.engine.experience import ExperienceStore
 from app.prompt import CompositePromptBuilder, HeuristicPromptBuilder, PromptContext
+from app.registry.runtime import discover_runtime
 
 
 class SessionStream:
@@ -204,6 +209,110 @@ class ComfyUIServer:
         """Получить историю обратной связи для сессии."""
         records = self.feedback_store.get_for_session(session_id)
         return [r.to_dict() for r in records]
+
+    # --- S9: POST /api/assets (multipart + JSON base64) ---
+
+    def upload_asset(self, file_data: bytes, filename: str, mime=None):
+        """Загрузить файл как Asset через AssetStore.ingest (S9)."""
+        if not filename:
+            raise ValueError("filename required")
+        fd, tmp_path = tempfile.mkstemp(suffix=os.path.splitext(filename)[1])
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(file_data)
+            asset_type = _mime_to_type(mime, filename)
+            asset = self.store.ingest(
+                tmp_path, type=asset_type,
+                mime=mime or mimetypes.guess_type(filename)[0],
+                role="input",
+            )
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return {
+            "asset_id": asset.id, "id": asset.id,
+            "type": asset.type, "mime": asset.mime,
+            "filename": filename, "size": len(file_data),
+            "role": "input",
+            "url": f"/asset/{asset.id}",
+            "created_at": asset.created_at,
+        }
+
+    def upload_asset_multipart(self, raw: bytes, content_type: str) -> dict:
+        """Обработать multipart: единственный file-part -> Asset (S9)."""
+        boundary = None
+        for token in content_type.split(";"):
+            token = token.strip()
+            if token.startswith("boundary="):
+                boundary = token.split("=", 1)[1].strip('"')
+        if not boundary:
+            raise ValueError("missing multipart boundary")
+        parts = _parse_multipart(raw, boundary)
+        files = [p for p in parts if p["filename"]]
+        if not files:
+            raise ValueError("no file part in multipart body")
+        if len(files) > 1:
+            raise ValueError("multiple files not supported (S9: один asset на turn)")
+        f = files[0]
+        if not f["data"]:
+            raise ValueError("empty file")
+        return self.upload_asset(f["data"], f["filename"], f["content_type"])
+
+
+def _parse_multipart(raw: bytes, boundary: str) -> list:
+    """Разобрать multipart/form-data body на части (fields + files).
+
+    Возвращает list[dict] с ключами: name, filename, content_type, data (bytes).
+    """
+    sep = boundary.encode("utf-8")
+    parts = []
+    for chunk in raw.split(b"--" + sep):
+        if chunk.startswith(b"\r\n"):
+            chunk = chunk[2:]
+        if not chunk or chunk == b"--\r\n" or chunk == b"--":
+            continue
+        split = chunk.find(b"\r\n\r\n")
+        if split < 0:
+            continue
+        headers_raw = chunk[:split].decode("utf-8", errors="replace")
+        body = chunk[split + 4:]
+        if body.endswith(b"\r\n"):
+            body = body[:-2]
+        meta = {}
+        for line in headers_raw.split("\r\n"):
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip().lower()] = v.strip()
+        cd = meta.get("content-disposition", "")
+        name = ""
+        filename = ""
+        for part in cd.split(";"):
+            part = part.strip()
+            if part.startswith("name="):
+                name = part.split("=", 1)[1].strip('"')
+            elif part.startswith("filename="):
+                filename = part.split("=", 1)[1].strip('"')
+        parts.append({
+            "name": name,
+            "filename": filename,
+            "content_type": meta.get("content-type", "application/octet-stream"),
+            "data": body,
+        })
+    return parts
+
+
+def _mime_to_type(mime, filename):
+    """Определить media-agnostic Asset.type по mime/filename (S9: image)."""
+    mime = mime or mimetypes.guess_type(filename)[0] or ""
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    return "input"
 
 
 def _mime_for(path: str) -> str:
@@ -477,15 +586,17 @@ def _make_handler(factory: ComfyUIServer):
             if parsed.path == "/api/feedback":
                 self._handle_feedback()
                 return
+            if parsed.path == "/api/assets":
+                self._handle_assets_upload()
+                return
+            if parsed.path == "/api/chat":
+                self._handle_chat()
+                return
             if parsed.path != "/turn":
                 self._send_json({"error": "not found"}, code=404)
                 return
-            try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                raw = self.rfile.read(length) if length else b"{}"
-                body = json.loads(raw.decode("utf-8") or "{}")
-            except (ValueError, json.JSONDecodeError):
-                self._send_json({"error": "bad json"}, code=400)
+            body = self._read_json_body()
+            if body is None:
                 return
             session_id = body.get("session_id") or "default"
             factory.run_turn(
@@ -507,6 +618,79 @@ def _make_handler(factory: ComfyUIServer):
                 return
             session_id = body.get("session_id")
             attempt_id = body.get("attempt_id")
+        def _handle_assets_upload(self) -> None:
+            """POST /api/assets -- file upload (PROJECT_SPEC §21, S9).
+
+            Принимает multipart/form-data (единственный file-part) либо
+            application/json {"data": base64, "name": ..., "type": ..., "mime": ...}.
+            """
+            content_type = self.headers.get("Content-Type", "")
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0:
+                self._send_json({"error": "empty body"}, code=400)
+                return
+            if length > factory.store.max_upload_bytes:
+                self._send_json({"error": "file too large"}, code=413)
+                return
+            if content_type.startswith("multipart/form-data"):
+                raw = self.rfile.read(length)
+                try:
+                    result = factory.upload_asset_multipart(raw, content_type)
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, code=400)
+                    return
+            elif content_type.startswith("application/json"):
+                raw = self.rfile.read(length)
+                try:
+                    payload = json.loads(raw.decode("utf-8") or "{}")
+                    data_b64 = payload.get("data")
+                    if not data_b64:
+                        raise ValueError("data (base64) required")
+                    file_data = base64.b64decode(data_b64)
+                    result = factory.upload_asset(
+                        file_data,
+                        payload.get("name", "file.bin"),
+                        payload.get("mime"),
+                    )
+                except (ValueError, binascii.Error, json.JSONDecodeError) as exc:
+                    self._send_json({"error": str(exc)}, code=400)
+                    return
+            else:
+                self._send_json({"error": "multipart/form-data or application/json required"}, code=415)
+                return
+            self._send_json({"ok": True, **result})
+
+        def _read_json_body(self):
+            """Прочитать и распарсить JSON-тело POST; при ошибке -- 400 и None."""
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length else b"{}"
+                body = json.loads(raw.decode("utf-8") or "{}")
+            except (ValueError, json.JSONDecodeError):
+                self._send_json({"error": "bad json"}, code=400)
+                return None
+            return body
+
+        def _handle_chat(self) -> None:
+            """POST /api/chat -- §21 analog of /turn (requires request)."""
+            body = self._read_json_body()
+            if body is None:
+                return
+            session_id = body.get("session_id") or "default"
+            request = body.get("request")
+            if not request or not str(request).strip():
+                self._send_json({"error": "request required"}, code=400)
+                return
+            factory.run_turn(
+                session_id,
+                capability=body.get("capability"),
+                request=request,
+                params=body.get("params"),
+                assets=body.get("assets"),
+            )
+            self._send_json({"ok": True, "session_id": session_id, "endpoint": "/api/chat"})
+
+
             rating = body.get("rating")
             comment = body.get("comment", "")
             if not session_id or not attempt_id or rating is None:

@@ -716,6 +716,29 @@ class Agent:
     # --- входные ассеты (path / base64 / active_asset / reference) ---
 
     @staticmethod
+    def explicit_asset_type(assets: Any = None, store: Any = None) -> Optional[str]:
+        """Тип ДОБАВОЧНОГО explicit input текущего turn (S9, AD-23 приоритет).
+
+        Возвращает первый известный media-тип из `assets`, если неявно указанный
+        пользователем Asset (не активный ассет сессии). Отличия от
+        `resolve_asset_inputs`: эта функция НЕ трогает session.active_asset и
+        вызывается до определения capability (для planner context).
+        """
+        if not assets or not isinstance(assets, dict):
+            return None
+        for role, spec in assets.items():
+            if isinstance(spec, list):
+                for item in spec:
+                    t = _resolve_one_type(item, store)
+                    if t:
+                        return t
+                continue
+            t = _resolve_one_type(spec, store)
+            if t:
+                return t
+        return None
+
+    @staticmethod
     def resolve_asset_inputs(
         assets: Any = None,
         context: Any = None,
@@ -772,6 +795,38 @@ class Agent:
             else:
                 out[role] = _resolve_one(spec, role, required_roles.get(role), store, as_ids)
         return out
+
+
+def _resolve_one_type(spec: Any, store: Any) -> Optional[str]:
+    """Медиа-тип одного explicit asset (для planner context), без изменения active_asset."""
+    import mimetypes
+    import os
+    from pathlib import Path
+
+    if isinstance(spec, str):
+        # path → по расширению (mime guess, без чтения файла)
+        mime, _ = mimetypes.guess_type(spec)
+        if mime and mime.startswith("image/"):
+            return "image"
+        if mime and mime.startswith("video/"):
+            return "video"
+        if mime and mime.startswith("audio/"):
+            return "audio"
+        return None
+    if isinstance(spec, dict):
+        if "asset_id" in spec or "reference" in spec:
+            aid = spec.get("asset_id") or spec.get("reference")
+            asset = store.get(aid) if store else None
+            return asset.type if asset is not None else None
+        if "path" in spec:
+            return _resolve_one_type(spec["path"], store)
+        if "data" in spec:
+            name = spec.get("name", "")
+            mime, _ = mimetypes.guess_type(name)
+            if mime and mime.startswith("image/"):
+                return "image"
+            return None
+    return None
 
 
 def _resolve_one(spec: Any, role: str, kind: Optional[str], store: Any, as_ids: bool) -> str:
