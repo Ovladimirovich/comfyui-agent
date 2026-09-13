@@ -34,10 +34,12 @@ def store(tmp_path):
 
 
 @pytest.fixture(scope="session")
-def knowledge_core():
+def knowledge_core(tmp_path_factory):
+    """P1 contract: tmp data_dir — refresh() НЕ пишет в production app/data/knowledge."""
     from app.registry.capability import CapabilityRegistry
     cr = CapabilityRegistry()
-    core = KnowledgeCore(capability_registry=cr)
+    core = KnowledgeCore(capability_registry=cr,
+                         data_dir=str(tmp_path_factory.mktemp("kc_s2")))
     client = ComfyClient()
     try:
         core.refresh(client)

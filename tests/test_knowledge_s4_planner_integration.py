@@ -24,10 +24,10 @@ def heuristic_planner():
 
 
 @pytest.fixture
-def knowledge_core():
+def knowledge_core(tmp_path):
     from app.assets.store import AssetStore
     store = AssetStore(root="tests/__tmp_kcs4_planner__")
-    return KnowledgeCore()
+    return KnowledgeCore(data_dir=str(tmp_path / "kc"))
 
 
 # ------------------------------------------------------------------

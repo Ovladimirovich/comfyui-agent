@@ -23,7 +23,7 @@ def main():
 
     # ===== 1. RUNTIME DISCOVERY =====
     try:
-        core = KnowledgeCore()
+        core = KnowledgeCore(data_dir=__import__('tempfile').mkdtemp())
         diff = core.refresh(client)
         schemas = core.get_schemas()
         assert len(schemas) > 0, "No nodes discovered"
@@ -67,7 +67,7 @@ def main():
         loaded = store.load_current()
         assert len(loaded) == len(schemas), f"Loaded {len(loaded)} != {len(schemas)}"
         assert "AgnesVideo" in loaded
-        core2 = KnowledgeCore()
+        core2 = KnowledgeCore(data_dir=__import__('tempfile').mkdtemp())
         core2.load_from_store()
         schemas2 = core2.get_schemas()
         assert len(schemas2) == len(schemas)
@@ -155,7 +155,7 @@ def main():
     try:
         cr = CapabilityRegistry()
         caps_before = sorted([c.id for c in cr.all()])
-        core_reg = KnowledgeCore(capability_registry=cr)
+        core_reg = KnowledgeCore(capability_registry=cr, data_dir=__import__('tempfile').mkdtemp())
         core_reg.refresh(client)
         caps_after = sorted([c.id for c in cr.all()])
         assert caps_before == caps_after, f"CapabilityRegistry changed: {caps_before} -> {caps_after}"

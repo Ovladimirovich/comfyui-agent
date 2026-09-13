@@ -37,8 +37,10 @@ def runtime_validator(mock_comfy_client):
 
 
 @pytest.fixture
-def knowledge_core(runtime_validator):
-    return KnowledgeCore(runtime_validator=runtime_validator)
+def knowledge_core(runtime_validator, tmp_path):
+    # P1 contract: tmp data_dir — validate_runtime не пишет в production app/data/knowledge
+    return KnowledgeCore(runtime_validator=runtime_validator,
+                         data_dir=str(tmp_path / "kc"))
 
 
 # ------------------------------------------------------------------

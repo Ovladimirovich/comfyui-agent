@@ -546,3 +546,28 @@ class KnowledgeCore:
         except Exception as e:
             return {"status": "ERROR", "node_class": candidate.node_class,
                     "reason": str(e)}
+
+
+    # --- S3: Ecosystem Facts & Provenance Queries (advisory, read-only) ---
+    # Тонкие делегаты на app.knowledge.queries (чистые функции).
+    # НЕТ записей, НЕТ регистрации, НЕТ изменения readiness/execution eligibility.
+
+    def find_node(self, class_type: str):
+        from app.knowledge import queries
+        return queries.find_node(self, class_type)
+
+    def find_package(self, package_id: str):
+        from app.knowledge import queries
+        return queries.find_package(self, package_id)
+
+    def nodes_by_io(self, output_type=None, required_inputs_contain=(), include_optional: bool = False):
+        from app.knowledge import queries
+        return queries.nodes_by_io(self, output_type, tuple(required_inputs_contain), include_optional)
+
+    def explain_node(self, class_type: str):
+        from app.knowledge import queries
+        return queries.explain_node(self, class_type)
+
+    def gap_report(self, live_object_info=None):
+        from app.knowledge import queries
+        return queries.gap_report(self, live_object_info)

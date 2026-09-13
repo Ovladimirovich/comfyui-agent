@@ -64,7 +64,7 @@ def tmp_evidence_store(tmp_path):
 def core_with_store(tmp_path, agnes_node_dir):
     from app.knowledge.evidence_store import EvidenceStore
     store = EvidenceStore(data_dir=str(tmp_path / "evidence"))
-    core = KnowledgeCore(evidence_store=store)
+    core = KnowledgeCore(evidence_store=store, data_dir=str(tmp_path / "kc"))
     return core, store
 
 
@@ -384,8 +384,8 @@ class TestFSessionIsolation:
         """Two cores with different stores don't share evidence."""
         store_a = EvidenceStore(data_dir=str(tmp_path / "core_a"))
         store_b = EvidenceStore(data_dir=str(tmp_path / "core_b"))
-        core_a = KnowledgeCore(evidence_store=store_a)
-        core_b = KnowledgeCore(evidence_store=store_b)
+        core_a = KnowledgeCore(evidence_store=store_a, data_dir=str(tmp_path / "kc_a"))
+        core_b = KnowledgeCore(evidence_store=store_b, data_dir=str(tmp_path / "kc_b"))
 
         ev = KnowledgeEvidence(
             source="local:/test",

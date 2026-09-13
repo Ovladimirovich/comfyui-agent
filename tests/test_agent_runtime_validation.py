@@ -128,14 +128,16 @@ class TestAgentRuntimeValidation:
 class TestAgentS4Integration:
     """Интеграция S4 (Runtime Validator) с Agent."""
 
-    def test_knowledge_core_and_runtime_validator(self):
+    def test_knowledge_core_and_runtime_validator(self, tmp_path):
         """KnowledgeCore и RuntimeValidator работают вместе."""
         from app.knowledge.core import KnowledgeCore
         from app.knowledge.runtime_validator import RuntimeValidator
         
         # Создаем оба компонента
+        # P1 contract: tmp data_dir — validate_runtime() не пишет в production app/data/knowledge
         runtime_validator = RuntimeValidator(comfy_client=None)
-        knowledge_core = KnowledgeCore(runtime_validator=runtime_validator)
+        knowledge_core = KnowledgeCore(runtime_validator=runtime_validator,
+                                       data_dir=str(tmp_path / "kc"))
         
         # Валидация без клиента возвращает ошибку
         result = knowledge_core.validate_runtime("TestNode", {})

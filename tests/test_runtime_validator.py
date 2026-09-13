@@ -36,8 +36,10 @@ def runtime_validator(mock_comfy_client):
 
 
 @pytest.fixture
-def knowledge_core(runtime_validator):
-    return KnowledgeCore(runtime_validator=runtime_validator)
+def knowledge_core(runtime_validator, tmp_path):
+    # P1 contract: tmp data_dir — validate_runtime не пишет в production app/data/knowledge
+    return KnowledgeCore(runtime_validator=runtime_validator,
+                         data_dir=str(tmp_path / "kc"))
 
 
 # ------------------------------------------------------------------
@@ -142,7 +144,7 @@ class TestKnowledgeCoreSlice4:
         assert result["execution_time_ms"] > 0
 
     def test_validate_runtime_no_validator(self):
-        core = KnowledgeCore()
+        core = KnowledgeCore(data_dir=__import__('tempfile').mkdtemp())
         result = core.validate_runtime("TestNode", {})
         assert "error" in result
         assert "RuntimeValidator not configured" in result["error"]

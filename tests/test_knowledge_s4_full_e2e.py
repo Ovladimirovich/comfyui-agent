@@ -30,7 +30,8 @@ from app.engine import ExecutionPlan
 # ------------------------------------------------------------------
 
 COMFY_URL = "http://127.0.0.1:8188"
-DATA_DIR = str(Path(__file__).parent.parent / "app/data/knowledge")
+DATA_DIR = str(Path(__file__).parent.parent / "app/data/knowledge")  # READ-ONLY (docs/snapshot)
+PERSIST_DIR: str = ""  # заполняется fixture persist_dir (P1 contract: запись только в tmp)
 
 
 # ------------------------------------------------------------------
@@ -52,10 +53,17 @@ def agent(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def knowledge_core(comfy_client):
+def persist_dir(tmp_path_factory):
+    # P1 contract: ClaimsPersistence/NodeSchemaStore пишут ТОЛЬКО в tmp
+    return str(tmp_path_factory.mktemp("s4_full_persist"))
+
+
+@pytest.fixture(scope="module")
+def knowledge_core(comfy_client, persist_dir):
     rv = RuntimeValidator(comfy_client=comfy_client, max_wait_seconds=30)
-    cp = ClaimsPersistence(data_dir=DATA_DIR)
-    return KnowledgeCore(runtime_validator=rv, claims_persistence=cp)
+    cp = ClaimsPersistence(data_dir=persist_dir)
+    return KnowledgeCore(runtime_validator=rv, claims_persistence=cp,
+                         data_dir=persist_dir)
 
 
 @pytest.fixture(scope="module")
