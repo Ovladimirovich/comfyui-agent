@@ -350,14 +350,19 @@ class Agent:
         runtime: Optional[RuntimeInfo],
         models: set,
         custom_nodes: set,
+        backend: Optional[BackendSpec] = None,  # S1: для cost_tier resolution
     ):
-        """Строгий выбор workflow (AD-18 + S4): по by_capability + совместимости.
+        """Строгий выбор workflow (AD-18 + S4 + S1): по by_capability + совместимости + cost_tier.
 
         Falls back НЕ происходит молча: кандидат выбирается только если его
         совместимость ПОДТВЕРЖДЕНА (AVAILABLE) через _compatibility_from_known.
         При runtime=None workflow с runtime-dependent требованиями → UNKNOWN и
         НЕ выбирается. Если ни один кандидат не подтверждён — AgentError.
+
+        S1: PAID/UNKNOWN cost_tier исключаются из auto-selection (filter → ranking).
         """
+        from app.registry.cost import COST_RANKING, CostTier
+
         candidates = self.registry.by_capability(capability)
         if not candidates:
             raise AgentError(f"capability не найден: {capability}")
@@ -377,19 +382,25 @@ class Agent:
             c.status = status
             c.reasons = reasons
             if status == WorkflowStatus.AVAILABLE:
+                # S1: cost_tier filter (filter → ranking, не наоборот)
+                # Skip filter if no backend context (backward compat for direct calls)
+                if backend is not None:
+                    effective_tier = self._effective_cost_tier(c, backend)
+                    if effective_tier not in (CostTier.FREE, CostTier.TRIAL):
+                        continue  # PAID/UNKNOWN excluded from auto-selection
                 confirmed.append(c)
 
         if not confirmed:
             raise AgentError("нет workflow с подтверждённой совместимостью")
 
-        # S4: приоритет валидированным workflow (validated-score desc) ПЕРВЫМ,
-        # затем priority desc, min_vram_gb asc, id, версия (детерминированный tie-break).
+        # S4 + S1: ranking: validated-score desc → cost_tier desc → priority desc → min_vram_gb → id → version.
         ranked = sorted(
             confirmed,
             key=lambda w: (
                 -self._calculate_validation_score(
                     self.registry.get(w.id, w.version) or w
                 ),
+                -COST_RANKING.get(self._effective_cost_tier(w, backend) if backend is not None else CostTier.FREE, 0),
                 getattr(w, "priority", 0) * -1,
                 ((w.requirements or {}).get("min_vram_gb") or 0),
                 getattr(w, "id", ""),
@@ -457,6 +468,23 @@ class Agent:
         _threading.Thread(target=_run, daemon=True).start()
 
     # --- S0.5: Knowledge pre-flight (advisory, non-blocking) ---
+
+    @staticmethod
+    def _effective_cost_tier(workflow: "Workflow", backend: Optional[BackendSpec] = None) -> "CostTier":
+        """S1: Resolve effective cost_tier: workflow override > backend > UNKNOWN.
+
+        Если workflow.cost_tier задан — используется он.
+        Иначе — backend.cost_tier.
+        Если backend не задан — UNKNOWN.
+        """
+        from app.registry.cost import CostTier
+
+        wf_tier = getattr(workflow, "cost_tier", None)
+        if wf_tier is not None:
+            return wf_tier
+        if backend is not None:
+            return getattr(backend, "cost_tier", CostTier.UNKNOWN)
+        return CostTier.UNKNOWN
 
     def _plan_result_to_query(
         self,
@@ -557,17 +585,21 @@ class Agent:
 
         asset_paths: {role: локальный_путь} — входные ассеты (ингестятся в AssetStore).
         """
+        selected_backend: Optional[BackendSpec] = None
         if provider is None:
             if self.backends is not None:
                 spec = self.backends.choose(capability, self.registry)
                 if spec is not None:
+                    selected_backend = spec
                     provider = _build_provider(spec.backend_id, base_url=spec.base_url)
             if provider is None:
                 provider = _build_provider(backend_id, base_url=base_url)
 
         facts = self._discover_facts(provider.client, backend_id)
-        manifest = self._select_manifest(capability, facts.runtime, facts.models, facts.custom_nodes)
-
+        manifest = self._select_manifest(
+            capability, facts.runtime, facts.models, facts.custom_nodes,
+            backend=selected_backend,  # S1: для cost_tier resolution
+        )
 
         asset_bindings: dict = {}
         if asset_paths:

@@ -25,6 +25,18 @@ class BackendSpec:
     capabilities: set[str] = field(default_factory=set)  # пусто = все capability
     disabled: bool = False
     description: str = ""
+    cost_tier: "CostTier" = None  # S1: default set in __post_init__
+
+    def __post_init__(self) -> None:
+        if self.cost_tier is None:
+            from app.registry.cost import CostTier
+            self.cost_tier = CostTier.FREE if self.kind == "local_comfyui" else CostTier.UNKNOWN
+        elif isinstance(self.cost_tier, str):
+            from app.registry.cost import CostTier
+            try:
+                self.cost_tier = CostTier(self.cost_tier)
+            except ValueError:
+                self.cost_tier = CostTier.UNKNOWN
 
 
 class BackendCatalog:
@@ -51,18 +63,30 @@ class BackendCatalog:
         capability: str,
         registry: Optional[WorkflowRegistry] = None,
         probe: Optional[Callable[[BackendSpec], Optional[RuntimeInfo]]] = None,
+        allow_paid: bool = False,  # S1: True только при explicit override
     ) -> Optional[BackendSpec]:
         """Выбрать backend для capability.
 
-        Без probe: из eligibility (не disabled + capability разрешён) берётся
-        backend с наивысшим priority. С probe: дополнительно ранжируется по VRAM
-        (больше = лучше), probe(None) исключает недоступный backend.
+        Без probe: из eligibility (не disabled + capability разрешён + cost_tier
+        допущен) берётся backend с наивысшим priority. С probe: дополнительно
+        ранжируется по VRAM (больше = лучше), probe(None) исключает недоступный.
+
+        S1: cost_tier filter. PAID/UNKNOWN исключаются из auto-selection
+        (allow_paid=False). FREE/TRIAL допускаются.
         """
+        from app.registry.cost import CostTier
+
         eligible = [
             b
             for b in self.backends
             if not b.disabled and (not b.capabilities or capability in b.capabilities)
         ]
+        # S1: cost_tier filter
+        if not allow_paid:
+            eligible = [
+                b for b in eligible
+                if b.cost_tier in (CostTier.FREE, CostTier.TRIAL)
+            ]
         if not eligible:
             return None
         if probe is not None:
@@ -99,4 +123,4 @@ class BackendCatalog:
         if url:
             kind = "remote_comfyui" if os.environ.get("COMFY_REMOTE_URL") else "local_comfyui"
             return cls([BackendSpec(backend_id=kind, base_url=url, kind=kind, priority=10)])
-        return cls([BackendSpec(backend_id="local_comfyui", base_url="http://127.0.0.1:8188", priority=0)])
+        return cls([BackendSpec(backend_id="local_comfyui", base_url="http://127.0.0.1:8188", kind="local_comfyui", priority=0)])

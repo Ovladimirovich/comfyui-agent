@@ -168,8 +168,8 @@ def test_agent_multi_backend_selects_highest_priority(monkeypatch, tmp_path):
     monkeypatch.setattr("app.agent._build_provider", fake_build)
     store = AssetStore(root=tmp_path)
     cat = BackendCatalog([
-        BackendSpec("local_comfyui", "http://127.0.0.1:8188", priority=0),
-        BackendSpec("remote_comfyui", "http://gpu:8188", priority=10),
+        BackendSpec("local_comfyui", "http://127.0.0.1:8188", kind="local_comfyui", priority=0),
+        BackendSpec("remote_comfyui", "http://gpu:8188", kind="local_comfyui", priority=10),
     ])
     agent = Agent(store, backends=cat)
     # AD-18 strict: без полного runtime (fp16) txt2img = UNKNOWN, не AVAILABLE.
@@ -189,8 +189,8 @@ def test_agent_multi_backend_capability_filter(monkeypatch, tmp_path):
     monkeypatch.setattr("app.agent._build_provider", fake_build)
     store = AssetStore(root=tmp_path)
     cat = BackendCatalog([
-        BackendSpec("local_comfyui", "http://a", priority=10, capabilities={"image.generate"}),
-        BackendSpec("remote_comfyui", "http://b", priority=100, capabilities={"video.generate"}),
+        BackendSpec("local_comfyui", "http://a", kind="local_comfyui", priority=10, capabilities={"image.generate"}),
+        BackendSpec("remote_comfyui", "http://b", kind="local_comfyui", priority=100, capabilities={"video.generate"}),
     ])
     agent = Agent(store, backends=cat)
 

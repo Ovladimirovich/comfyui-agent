@@ -156,6 +156,7 @@ class Workflow:
     reasons: list[Enum] = field(default_factory=list)
     manifest_path: Optional[str] = None
     workflow_path: Optional[str] = None
+    cost_tier: Optional["CostTier"] = None  # S1: optional cost override from manifest
 
     def status_available(self) -> bool:
         return self.status == WorkflowStatus.AVAILABLE
@@ -340,6 +341,16 @@ def load_workflow(manifest_path: str | os.PathLike, capabilities: Optional[Capab
 
     declared_only = bool(data.get("declared_only", False))
 
+    # S1: parse cost_tier (optional, default None = inherit from backend)
+    cost_tier_raw = data.get("cost_tier")
+    cost_tier = None
+    if cost_tier_raw is not None:
+        from app.registry.cost import CostTier
+        try:
+            cost_tier = CostTier(str(cost_tier_raw))
+        except ValueError:
+            cost_tier = None  # invalid value → ignore, inherit from backend
+
     # AD-MODEL-BINDING-001: model requirements (typed) или миграция legacy.
     model_requirements: list[ModelRequirement] = []
     contract_version = 0
@@ -406,6 +417,7 @@ def load_workflow(manifest_path: str | os.PathLike, capabilities: Optional[Capab
         limits=data.get("limits", {}),
         declared_only=declared_only,
         priority=int(data.get("priority", 0)),
+        cost_tier=cost_tier,  # S1: optional cost override
         manifest_path=str(manifest_path),
     )
 
