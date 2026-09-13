@@ -133,6 +133,8 @@ class ComfyUIServer:
         (DirectML/CPU backend) timeout запускает /history fallback. 15s достаточно
         для fast-fallthrough; реальный WS progress (GPU backends) не затронут.
         """
+        if ws_timeout is None:  # explicit None from POST body -> original default
+            ws_timeout = 15
         stream = self.stream(session_id)
 
         def _run() -> None:
@@ -160,13 +162,17 @@ class ComfyUIServer:
                     on_progress=_on_progress,
                 )
                 ctx: ConversationContext = self.agent.session(session_id)
+                job_state = job.state.value if job is not None else None
                 stream.push({
                     "type": "result",
-                    "state": job.state.value if job is not None else None,
+                    "state": job_state,
                     "active_asset": ctx.active_asset,
                     "active_workflow": ctx.active_workflow,
                     "active_job": ctx.active_job,
                     "assets": sorted(ctx.assets),
+                    "job": job.prompt_id if job is not None else None,
+                    "error": getattr(job, "error", None) if job_state == "FAILED" else None,
+                    "error_class": getattr(job, "error_class", None) if job_state == "FAILED" else None,
                     "preview": f"/asset/{ctx.active_asset}" if ctx.active_asset else None,
                 })
             except Exception as exc:  # ошибка не должна обрушивать поток SSE
@@ -524,16 +530,19 @@ def _make_handler(factory: ComfyUIServer):
             idx = 0
             try:
                 while True:
-                    ev = stream.wait_next(idx)
+                    ev = stream.wait_next(idx, timeout=15)
                     if ev is None:
-                        break
+                        # keepalive ping during idle turn: idle >15s does not close SSE
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                        continue
                     self.wfile.write(f"event: {ev.get('type')}\n".encode("utf-8"))
                     self.wfile.write(f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     idx += 1
                     if ev.get("type") in SessionStream.TERMINAL:
                         break
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, TimeoutError, ConnectionAbortedError, OSError):
                 pass
 
         def _handle_asset(self, asset_id: str) -> None:

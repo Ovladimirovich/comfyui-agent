@@ -206,3 +206,18 @@ Status: PROPOSED | APPROVED
 - **Affected components:** `app/agent.py` (TODO note at line 313), `docs/EXTENDED_DISCOVERY_DESIGN.md` (§G Backend-Scoping Boundary), `engineering/DECISION_LOG.md` (этот записЬ). НЕТ изменений в `app/registry/selection.py`, `app/registry/compatibility.py`, `app/registry/backends.py`.
 - **Author/Agent:** Agnes-2.5-flash (extended discovery audit + AD formulation)
 - **Status:** APPROVED (deferred enforcement)
+
+
+## 2026-09-13 - AD-45, AD-46, AD-47 (Ecosystem-First S0.5/S1/S2)
+
+- **Decision ID:** AD-45, AD-46, AD-47
+- **Context:** Ecosystem-First baseline (docs/ECOSYSTEM_FIRST_ARCHITECTURE.md, APPROVED) требует трёх слоёв: связи Knowledge с Agent (S0.5), Free-First (S1), моста Candidate→Workflow (S2). Каждый принят автором по ритуалу design → approval → implementation → forensic verification → freeze.
+- **Decision:**
+  - **AD-45 (Knowledge advisory invariant):** KnowledgeCore pre-flight подключён к `Agent`/`ConversationAgent` как OPTIONAL (`knowledge_core=None` = прежнее поведение) и является **advisory evidence, а НЕ execution eligibility**. Readiness `EXECUTABLE/CANDIDATE_ONLY/GAP/UNKNOWN` описывает только то, что знает Knowledge; право на исполнение остаётся за capability/workflow/compatibility/S1-cost проверками. Knowledge absence ≠ capability absence (fail-open). Metadata `Job._knowledge_readiness/_knowledge_gaps` — runtime-only, НЕ в ExecutionRecord persistence.
+  - **AD-46 (CostTier binding + UNKNOWN≠FREE):** `CostTier{FREE,TRIAL,PAID,UNKNOWN}` живёт на `BackendSpec` (default по kind: local_comfyui→FREE, иначе UNKNOWN) и опционально на `Workflow` manifest (workflow override > backend > UNKNOWN). **Per-node cost НЕ вводится** (решение открытого Q1). UNKNOWN≠FREE (аналог AD-18). Auto-selection: filter→ranking (PAID/UNKNOWN исключаются ДО ранжирования; FREE>TRIAL — soft preference). `allow_paid=True` — только явный override, production его не передаёт.
+  - **AD-47 (Template-Based Synthesis; synthesis ≠ validation):** one-node workflow synthesis ОТКЛОНЁН feasibility gate'ом (реальный ComfyUI — multi-node графы; IMAGE/MODEL/LATENT inputs требуют upstream; 150+ input types). Принята template-синтез: `CapabilityCandidate + NodeSchema + WorkflowTemplate → manifest/workflow` (deterministic selector, без LLM, без graph solver). Синтез produce'ит **только данные**: нет auto-registration в WorkflowRegistry, нет статуса VALIDATED от факта синтеза, readiness не меняется. Валидация — существующая инфраструктура (load_workflow = статическая; RuntimeValidator = deferred S6). Safety-классификация минимальная: ALLOWED/REQUIRES_CONFIRMATION/FORBIDDEN по python_module/category; при недостатке доказательств → REQUIRES_CONFIRMATION.
+- **Reason:** Разделение источников истины: Knowledge — про знание, compatibility/cost-фильтры — про допуск, execution — про факт. Слияние этих слоёв давало бы ложные разрешения на запуск (см. S2 acceptance gate, IMAGE-ноды vs graph fragments).
+- **Affected components:** `app/agent.py`, `app/conversation.py`, `app/engine/job.py` (S0.5); `app/registry/cost.py` (new), `app/registry/backends.py`, `app/registry/workflow.py` (S1); `app/synthesis/` (new, S2), `app/knowledge/core.py` (+synthesize_candidates, advisory). Frozen M25/M26 контракты не затронуты.
+- **Tech debt (осознанно принята):** `_select_manifest()` без аргумента `backend` пропускает cost-filter (backward-compat прямых вызовов; production path через `prepare()` backend передаёт). Если `_select_manifest` станет публичным — закрыть отдельно.
+- **Author/Agent:** OpenCode (implementation) / автор проекта (approval каждого слоя)
+- **Status:** APPROVED & FROZEN (S0.5, S1); S2 — ACCEPTED WITH DOCUMENTED RUNTIME GAP (файл-output proof ждёт свободной ComfyUI-очереди; graph принят сервером)

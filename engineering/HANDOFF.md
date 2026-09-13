@@ -20,14 +20,37 @@ NEXT RECOMMENDED TASK
 
 > Заполняется перед логической границей сессии. Новая сессия восстанавливает состояние отсюда, не из истории чата. Правила границ сессий — в `AGENTS.md` §Session Boundary Management.
 
-- **Current milestone:** M26 — FROZEN (M26.1/26.2/26.4 ACCEPTED; M26.3 REDEFINED/DEFERRED; AD-44 SUPERSEDED). M25 FROZEN.
-- **Current phase:** POST-M26 — read-only forensic audit и docs reconciliation завершены.
-- **Current status:** стабильно; regression 192 passed, 1 skipped; 5 pre-existing INFRA fails (`test_planner_context`, AD-18) без изменений.
-- **Allowed work:** чтение/аудит; roadmap/docs reconciliation; новые milestone — только после approval автора.
-- **Forbidden work:** Python-код; изменение M25/M26/AD-41/AD-44/PlanContext/ExecutionRecord/JobState; Video Editor; FFmpeg/OpenCV; frame extraction; output-video quality gate.
-- **Last completed activity:** Post-M26 Roadmap & Architecture Audit (read-only) — вывод: NO NEW MILESTONE JUSTIFIED YET (единственный кодовый gap — LLMPlanner inert — зависит от внешнего API-ключа).
-- **Next activity:** по решению автора (см. HANDOFF 2026-09-11 внизу).
-- **Session boundary:** при завершении audit/design рекомендовать `START NEW SESSION` (см. формат в AGENTS.md).
+- **Current milestone:** M26 — FROZEN. Ecosystem-First: **S0.5 FROZEN / S1 FROZEN / S2 ACCEPTED WITH DOCUMENTED RUNTIME GAP** (2026-09-13).
+- **Current phase:** S3 (Ecosystem Facts & Provenance Queries) — следующий кандидат, аудит пока не начат.
+- **Current status:** regression subset S0.5+S1+S2 = 82 passed; основной core-suite 154 passed (S2-задача); полный suite ~190+ passed / skips (E2E требуют live ComfyUI).
+- **Allowed work:** S3 read-only forensic audit → design → (approval) → implementation. Docs/commit hygiene.
+- **Forbidden work:** RuntimeValidator repair; `_calculate_validation_score` activation; изменение S0.5/S1/S2 semantics; frozen M25/M26 contracts; per-node cost; числовой confidence; новый provenance-enum (переиспользовать EvidenceTrustLevel/ClaimStatus).
+- **Last completed activity:** S2 acceptance gate: git status собран, runtime proof — synthesized graph принят живым ComfyUI (ImageInvert, ALLOWED), полный файл-результат отложен (пользовательская очередь KSampler); старый `test_knowledge_integration_s2.py` примирён (16 passed/4 skipped).
+- **Pending hygiene:** перезапуск `scripts/s2_proof.py` при свободной очереди; решение автора о коммитах (всё рабочее состояние пока uncommitted).
+- **Session boundary:** при завершении S3 design рекомендовать `START NEW SESSION`.
+
+## RECONCILIATION — 2026-09-13 (Knowledge Core Slice 2 — заявлен, кодом НЕ подтверждён)
+
+- **Расхождение документации и кода устранено (docs↔code).** Документы и предыдущие HANDOFF-блоки утверждали, что **Knowledge Core Slice 2** реализован: `Agent.generate()` + `ConversationAgent.turn()` выполняют KnowledgeCore pre-flight query, readiness пишется на Job как `_knowledge_readiness`/`_knowledge_gaps` (HANDOFF 2026-09-05, `tasks/ACTIVE.md`, `tasks/BACKLOG.md`, `docs/ECOSYSTEM_FIRST_ARCHITECTURE.md`). **Фактический код по HEAD это НЕ подтверждает.**
+- **Forensic verification (grep + запуск тестов):**
+  1. `KnowledgeCore` / `KnowledgeQuery` / `knowledge_core` не используются за пределами `app/knowledge/` (grep по `app/` — ссылки только внутри пакета; `app/agent.py`, `app/conversation.py`, `app/ui.py` — отсутствуют).
+  2. `Agent.__init__` НЕ имеет параметра `knowledge_core` (`app/agent.py:150`); `agent.knowledge_core`, `_plan_result_to_query` в коде отсутствуют.
+  3. `Job` (`app/engine/job.py`, 46 строк) НЕ содержит полей `_knowledge_readiness` / `_knowledge_gaps`.
+  4. `tests/test_knowledge_integration_s2.py` при текущем HEAD падает на setup: `TypeError: Agent.__init__() got an unexpected keyword argument 'knowledge_core'` (проверено `python -m pytest tests/test_knowledge_integration_s2.py -x`, 1 error).
+- **RuntimeValidator hook (S4).** `_validate_capability_nodes_background` (`app/agent.py:411`) — **dead code**: в production не вызывается (только из тестов `test_agent_runtime_validation.py`, `test_workflow_validation_priority.py`); вызов `validate_node(node_type)` несовместим с актуальной сигнатурой `validate_node(self, node_class: str, workflow: dict)` (`app/knowledge/runtime_validator.py:56`) → TypeError. Следствие: `Agent._validated_nodes` пуст → `_calculate_validation_score()` всегда 0.
+- **Статус после reconciliation:**
+  - **Knowledge Core Slice 1 — implemented / verified** (пакет `app/knowledge/`, тесты).
+  - **Knowledge Core Slice 2 — specified/planned, but not integrated into Agent execution path** (`KnowledgeCore` изолирован под `app/knowledge/`; production pre-flight query не выполняется).
+  - **RuntimeValidator hook — known implementation gap / deferred until approved implementation milestone** (не удалён, не чинится).
+- **Docs updated:** `tasks/ACTIVE.md`, `tasks/BACKLOG.md`, `docs/ECOSYSTEM_FIRST_ARCHITECTURE.md`, `docs/AGENT_UI_ARCHITECTURE.md`, `docs/ARCHITECTURE_ECOSYSTEM_DISCOVERY.md`, `docs/NEXT_MILESTONE_ARCHITECTURAL_AUDIT.md`. Production-код НЕ изменялся; commit НЕ выполнялся.
+
+## HANDOFF — 2026-09-13 (Ecosystem-First S0.5 + S1 + S2)
+
+- **S0.5 Knowledge pre-flight — FROZEN/VERIFIED.** `Agent`/`ConversationAgent`: optional `knowledge_core=None`; `_plan_result_to_query` + `_knowledge_preflight`; `Job._knowledge_readiness/_knowledge_gaps` (runtime-only, НЕ в ExecutionRecord). INVARIANT: readiness = advisory evidence, НЕ execution eligibility. 30 tests + 8-point forensic PASS. Design: `docs/ECOSYSTEM_FIRST_S0_5_DESIGN.md`.
+- **S1 CostTier — FROZEN/VERIFIED.** `app/registry/cost.py` (`FREE/TRIAL/PAID/UNKNOWN`, UNKNOWN≠FREE); `BackendSpec.cost_tier` (local→FREE, remote→UNKNOWN, string-коэрция); `Workflow.cost_tier` (override из manifest); filter→ranking в `choose()`/`_select_manifest` (auto-selection: только FREE/TRIAL; `allow_paid` — явный override, production не использует). Техдолг (осознанный): `_select_manifest` без `backend` пропускает cost-filter (backward-compat; только прямые вызовы вне `prepare()`). 32 tests + 8-point forensic PASS. Design: `docs/ECOSYSTEM_FIRST_S1_DESIGN.md`.
+- **S2 Template-Based Workflow Synthesis — ACCEPTED WITH DOCUMENTED RUNTIME GAP.** One-node synthesis ОТКЛОНЕН feasibility gate'ом (реальные схемы: IMAGE/MODEL/LATENT-требуют upstream; 150+ input types). Реализовано: `app/synthesis/` (template model, catalog 4 паттернов, deterministic selector, builder, safety ALLOWED/REQUIRES_CONFIRMATION/FORBIDDEN) + `KnowledgeCore.synthesize_candidates()` (advisory: БЕЗ auto-registration, БЕЗ изменения readiness). Реальный ComfyUI принял synthesized graph (ImageInvert→`s2_image_to_image`, enqueue=server validation OK); полный файл-output proof отложен (пользовательская очередь) — `scripts/s2_proof.py`. 20 tests. Deferred: image_to_video/multi-asset/model-dependent templates. Design: `docs/ECOSYSTEM_FIRST_S2_DESIGN.md`.
+- **Reconciliation:** старый `tests/test_knowledge_integration_s2.py` (наследие до-S0.5 era) приведён к approved S0.5 контракту: cardinality из manifest; неизвестная capability → query+UNKNOWN (не None); fixture session-scoped+skip без ComfyUI; subprocess-обёртки TestGRegression skip (заменены прямым прогоном). Итог: 16 passed / 4 skipped.
+- **NEXT:** S3 forensic audit (read-only): live `/object_info` facts, package→classes mapping, provenance через СУЩЕСТВУЮЩИЕ `EvidenceTrustLevel`/`ClaimStatus` (НОВЫЙ enum запрещён; USER_CONFIRMED = отдельный AD/G2 с открытым Q2), GAP-реестр, self-test — только design-контракт. Запреты: LLM, graph solver, auto-registration, per-node cost, числовой confidence, background/mass execution.
 
 ## HANDOFF — 2026-08-29 (AI engineering documentation layer)
 - **CURRENT STATE:** documentation baseline зафиксирован; код не писался.
@@ -724,6 +747,8 @@ Audit M1–M4 по 13 инвариантам:
 - **NEXT RECOMMENDED TASK:** Knowledge Core Slice 2 (Agent integration).
 
 ## HANDOFF — 2026-09-05 (Knowledge Core Slice 2 — MINIMAL AGENT INTEGRATION)
+
+> ⚠️ **CORRECTED 2026-09-13** — per HEAD verification: Slice 2 НЕ интегрирован; тест `test_knowledge_integration_s2.py` падает с `TypeError`. См. RECONCILIATION — 2026-09-13 выше.
 
 - **CURRENT STATE:** KnowledgeCore интегрирован в Agent/ConversationAgent как read-only pre-flight check. Zero regression.
 - **COMPLETED:**
