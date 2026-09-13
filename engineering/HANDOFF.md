@@ -26,7 +26,7 @@ NEXT RECOMMENDED TASK
 - **Allowed work:** S3 read-only forensic audit → design → (approval) → implementation. Docs/commit hygiene.
 - **Forbidden work:** RuntimeValidator repair; `_calculate_validation_score` activation; изменение S0.5/S1/S2 semantics; frozen M25/M26 contracts; per-node cost; числовой confidence; новый provenance-enum (переиспользовать EvidenceTrustLevel/ClaimStatus).
 - **Last completed activity:** S2 acceptance gate: git status собран, runtime proof — synthesized graph принят живым ComfyUI (ImageInvert, ALLOWED), полный файл-результат отложен (пользовательская очередь KSampler); старый `test_knowledge_integration_s2.py` примирён (16 passed/4 skipped).
-- **Pending hygiene:** перезапуск `scripts/s2_proof.py` при свободной очереди; решение автора о коммитах (всё рабочее состояние пока uncommitted).
+- **Pending hygiene:** ~~s2_proof перезапуск~~ **CLOSED (maintenance 2026-09-13):** `815e9fc2`=success, `ComfyUI_s2_00001_.png` (297839 B) в output; ~~коммиты~~ выполнены (S0.5/S1/S2/docs + S3 impl + S3 design); P1 cleanup выполнен по решению автора (удалены TestNode/FailNode/RestartTestNode, реальные записи сохранены).
 - **Session boundary:** при завершении S3 design рекомендовать `START NEW SESSION`.
 
 ## RECONCILIATION — 2026-09-13 (Knowledge Core Slice 2 — заявлен, кодом НЕ подтверждён)

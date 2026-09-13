@@ -74,6 +74,8 @@
 `app/data/knowledge/validated_nodes.json` содержит `TestNode/FailNode/RestartTestNode` — тесты пишут в **production-дир** (`ClaimsPersistence(data_dir="app/data/knowledge")` дефолт). Реальные записи: `PollinationsImageGen=True`, `Get Request Node=False`.
 → S3: изолировать тестовые data_dir (fixture tmp_path), clean-up запись в отчёте. **Не молча чистить данные** — показать список на удаление автору.
 
+> **P1 СТАТУС (2026-09-13, maintenance):** contract исполнен (все тестовые writers → tmp data_dir, проверено mtime-guard'ом); cleanup выполнен по решению автора: удалены только тестовые ключи `TestNode=false, FailNode=false, RestartTestNode=true`; сохранены реальные `Get Request Node=false, PollinationsImageGen=true, SaveImage=true`. Формат/семантика claims не изменялись.
+
 ### P2. Snapshot без package-level индекса
 `node_schemas.json` — плоский `{class: schema}`. Package→classes выводится из `python_module`, но пересчитывается и не аннотируется (сколько классов, safety-профиль пакета).
 → S3: derived-запрос (кэш необязателен), без новой сущности.
@@ -89,8 +91,8 @@ Gap'ы живут только в ответах `query()`. Нет ответа 
 `comfy_api_nodes.*` — по факту платные сервисы; но AD-46 сознательно **не ввёл per-node cost** (cost = backend+workflow). S2 safety (REQUIRES_CONFIRMATION) сейчас — единственная линия защиты для таких нод в synthesis.
 → S3: задокулировать в GAP-реестре как **known modeling gap**; НЕ вводить per-node CostTier без AD. Для synthesis-политики: нода из `comfy_api_nodes.*` → НЕ ALLOWED (уже так).
 
-### P6. Старый S2 runtime gap — открыт
-`815e9fc2` (ImageInvert proof) в очереди за пользовательскими KSampler. Перезапуск `scripts/s2_proof.py`.
+### P6. Старый S2 runtime gap — **CLOSED (maintenance 2026-09-13)**
+`815e9fc2` (ImageInvert proof) — history `status=success`; файл `ComfyUI_s2_00001_.png` (297839 bytes, PNG magic `89 50 4E 47…`) в output-dir. Синтеzированный S2 workflow исполнен живым ComfyUI end-to-end.
 
 ---
 
