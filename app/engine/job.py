@@ -44,3 +44,6 @@ class Job:
     _decision_reason: str | None = None
     _decision_suggestions: list[str] | None = None
     _decision_action: str | None = None  # M24: "ask_user" | None
+    # S0.5: Knowledge pre-flight metadata (advisory, non-blocking)
+    _knowledge_readiness: str | None = None  # "EXECUTABLE" / "CANDIDATE_ONLY" / "GAP" / "UNKNOWN"
+    _knowledge_gaps: list[str] | None = None  # human-readable gap descriptions

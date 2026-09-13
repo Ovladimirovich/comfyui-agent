@@ -163,6 +163,7 @@ class Agent:
         reconciler=None,  # M21: optional Reconciler for recovery
         feedback_store=None,  # M24.1: хранилище feedback для RetryPolicy
         runtime_validator=None,  # S4: валидатор нод на реальном ComfyUI
+        knowledge_core=None,  # S0.5: optional KnowledgeCore for pre-flight advisory
     ) -> None:
         self.store = asset_store
         self.model_registry = model_registry
@@ -187,6 +188,8 @@ class Agent:
         self.reconciler = reconciler
         # M24.1: FeedbackStore для failure-time feedback
         self.feedback_store = feedback_store
+        # S0.5: KnowledgeCore для pre-flight advisory (read-only, non-blocking)
+        self.knowledge_core = knowledge_core
 
     # --- discovery (media-agnostic) ---
 
@@ -453,6 +456,92 @@ class Agent:
 
         _threading.Thread(target=_run, daemon=True).start()
 
+    # --- S0.5: Knowledge pre-flight (advisory, non-blocking) ---
+
+    def _plan_result_to_query(
+        self,
+        result: PlanResult,
+        manifest: Optional[Workflow] = None,
+    ) -> Optional["KnowledgeQuery"]:
+        """Адаптер PlanResult+Workflow → KnowledgeQuery.
+
+        Возвращает None если knowledge_core не задан или capability пустая.
+        """
+        if self.knowledge_core is None:
+            return None
+        if not result.capability:
+            return None
+
+        from app.knowledge.core import KnowledgeQuery
+
+        # media_input из manifest asset_inputs
+        if manifest is not None:
+            asset_inputs = getattr(manifest, "asset_inputs", None) or {}
+            media_input = tuple(sorted({ain.kind for ain in asset_inputs.values()})) if asset_inputs else ()
+            cardinality = len(asset_inputs)
+        else:
+            media_input = ()
+            cardinality = 0
+
+        # media_output из capability_registry или heuristic parse
+        media_output = self._infer_media_output(result.capability)
+
+        task_description = result.params.get("prompt", "") if result.params else ""
+
+        return KnowledgeQuery(
+            required_operation=result.capability,
+            required_media_input=media_input,
+            required_media_output=media_output,
+            input_cardinality=cardinality,
+            task_description=task_description,
+        )
+
+    def _infer_media_output(self, capability: str) -> str:
+        """Infer media output type from capability name or CapabilityRegistry."""
+        # Try CapabilityRegistry first
+        try:
+            from app.registry.capability import CapabilityRegistry
+            cr = CapabilityRegistry()
+            cap = cr.get(capability)
+            if cap is not None and getattr(cap, "media_output", None):
+                return cap.media_output
+        except Exception:
+            pass
+        # Heuristic: "image.generate" → "image", "video.image_to_video" → "video"
+        if "." in capability:
+            prefix = capability.split(".")[0]
+            if prefix in ("image", "video", "audio", "text"):
+                return prefix
+        return ""
+
+    def _knowledge_preflight(
+        self,
+        capability: str,
+        manifest: Optional[Workflow] = None,
+        result: Optional[PlanResult] = None,
+    ) -> Optional[dict]:
+        """S0.5: Knowledge pre-flight query. Advisory only, non-blocking.
+
+        Returns dict with 'readiness' (str) and 'gaps' (list[str]),
+        or None if knowledge_core not available or query failed.
+        """
+        if self.knowledge_core is None:
+            return None
+
+        plan_result = result or PlanResult(capability=capability)
+        query = self._plan_result_to_query(plan_result, manifest)
+        if query is None:
+            return None
+
+        try:
+            response = self.knowledge_core.query(query)
+            return {
+                "readiness": response.readiness.value,
+                "gaps": [g.needed for g in response.gaps] if response.gaps else [],
+            }
+        except Exception:
+            return None
+
     # --- подготовка (без исполнения) — для инспекции/тестов ---
 
     def prepare(
@@ -478,6 +567,7 @@ class Agent:
 
         facts = self._discover_facts(provider.client, backend_id)
         manifest = self._select_manifest(capability, facts.runtime, facts.models, facts.custom_nodes)
+
 
         asset_bindings: dict = {}
         if asset_paths:
@@ -524,11 +614,18 @@ class Agent:
         manifest, plan, provider = self.prepare(
             capability, params, asset_paths, backend_id, provider, base_url
         )
-        return self.engine.execute(
+        # S0.5: Knowledge pre-flight (advisory, non-blocking)
+        knowledge_meta = self._knowledge_preflight(capability, manifest)
+        job = self.engine.execute(
             manifest, plan, provider=provider, ws_timeout=ws_timeout,
             gateway=gateway or self.gateway,
             history=history or self.execution_history,
         )
+        # S0.5: attach knowledge metadata to Job (additive, non-blocking)
+        if knowledge_meta is not None:
+            job._knowledge_readiness = knowledge_meta["readiness"]
+            job._knowledge_gaps = knowledge_meta["gaps"]
+        return job
 
     # --- natural-language вход (planner) ---
 

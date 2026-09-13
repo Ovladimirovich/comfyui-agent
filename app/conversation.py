@@ -93,6 +93,7 @@ class ConversationAgent(Agent):
         reconciler=None,  # M21: optional Reconciler
         feedback_store=None,  # M24.1: хранилище feedback для AdaptivePlanner + RetryPolicy
         experience_store=None,  # M25: хранилище experience для chain completion
+        knowledge_core=None,  # S0.5: optional KnowledgeCore for pre-flight advisory
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -107,6 +108,8 @@ class ConversationAgent(Agent):
         self.feedback_store = feedback_store
         # M25: ExperienceStore для фиксации опыта выполнения цепочек
         self.experience_store = experience_store
+        # S0.5: KnowledgeCore для pre-flight advisory (forward to Agent)
+        self.knowledge_core = knowledge_core
 
     # --- session management (изоляция сессий) ---
 
@@ -284,6 +287,9 @@ class ConversationAgent(Agent):
             capability, params, provider=provider, backend_id=backend_id, base_url=base_url
         )
 
+        # S0.5: Knowledge pre-flight (advisory, non-blocking)
+        knowledge_meta = self._knowledge_preflight(capability, manifest)
+
         # 3) резолюция входных ассетов (explicit > active_asset > reference; AD-23)
         required_roles = {role: ain.kind for role, ain in manifest.asset_inputs.items()}
         bindings = self.resolve_asset_inputs(
@@ -433,6 +439,10 @@ class ConversationAgent(Agent):
                     "attempt": attempt,
                 })
                 ctx.dialog_state = "idle"
+                # S0.5: attach knowledge metadata to Job
+                if knowledge_meta is not None:
+                    job._knowledge_readiness = knowledge_meta["readiness"]
+                    job._knowledge_gaps = knowledge_meta["gaps"]
                 return job
 
             if decision.action == "retry":
@@ -509,6 +519,11 @@ class ConversationAgent(Agent):
         # M15: auto-save context after turn
         if self.session_manager is not None:
             self.session_manager.save(session_id, ctx)
+
+        # S0.5: attach knowledge metadata to Job (final return)
+        if knowledge_meta is not None and job is not None:
+            job._knowledge_readiness = knowledge_meta["readiness"]
+            job._knowledge_gaps = knowledge_meta["gaps"]
 
         return job
 
@@ -720,6 +735,9 @@ class ConversationAgent(Agent):
             capability, merged_params, provider=provider, backend_id=backend_id, base_url=base_url,
         )
 
+        # S0.5: Knowledge pre-flight per chain step (advisory, non-blocking)
+        knowledge_meta = self._knowledge_preflight(capability, manifest, result)
+
         # 4) Резолюция входных assets
         input_assets = {}
         if chain_ctx.active_asset:
@@ -749,6 +767,10 @@ class ConversationAgent(Agent):
             manifest, plan, provider=provider_obj,
             ws_timeout=ws_timeout, on_progress=on_progress,
         )
+        # S0.5: attach knowledge metadata to Job (per chain step)
+        if knowledge_meta is not None:
+            job._knowledge_readiness = knowledge_meta["readiness"]
+            job._knowledge_gaps = knowledge_meta["gaps"]
         return job
 
     def _on_chain_step_complete(
