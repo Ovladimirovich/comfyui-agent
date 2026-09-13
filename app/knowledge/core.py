@@ -477,3 +477,72 @@ class KnowledgeCore:
             return Readiness.CANDIDATE_ONLY
 
         return Readiness.EXECUTABLE
+
+    # --- S2: Template-Based Workflow Synthesis ---
+
+    def synthesize_candidates(
+        self,
+        query: "KnowledgeQuery",
+    ) -> list[dict]:
+        """S2: Attempt to synthesize workflows for CANDIDATE_NO_WORKFLOW candidates.
+
+        For each candidate that has no existing workflow, attempts template-based
+        synthesis. Returns list of synthesis results (manifest + workflow dicts).
+
+        Advisory only — synthesized workflows are NOT automatically registered.
+        Caller decides whether to register based on safety classification.
+        """
+        response = self.query(query)
+        results = []
+
+        # Only attempt synthesis for CANDIDATE_NO_WORKFLOW gaps
+        candidate_gap_types = {g.gap_type for g in response.gaps}
+        from app.knowledge.gaps import GapType
+        if GapType.CANDIDATE_NO_WORKFLOW not in candidate_gap_types:
+            return results
+
+        for cand in response.candidate_nodes:
+            # Get schema for this candidate
+            schema = self._schemas.get(cand.node_class)
+            if schema is None:
+                continue
+
+            result = self._try_synthesize_one(cand, schema)
+            if result is not None:
+                results.append(result)
+
+        return results
+
+    def _try_synthesize_one(self, candidate, schema) -> Optional[dict]:
+        """Try to synthesize a workflow for one candidate."""
+        try:
+            from app.synthesis.selector import select_template
+            from app.synthesis.builder import synthesize_workflow
+            from app.synthesis.safety import classify_safety
+            from app.synthesis.template import SafetyClass
+
+            template = select_template(candidate, schema)
+            if template is None:
+                return None
+
+            safety = classify_safety(
+                schema.python_module, schema.category, candidate.node_class
+            )
+            if safety == SafetyClass.FORBIDDEN:
+                return {"status": "FORBIDDEN", "node_class": candidate.node_class,
+                        "reason": "node classified as FORBIDDEN for auto-synthesis"}
+
+            result = synthesize_workflow(candidate, schema, template, safety)
+            return {
+                "status": "SYNTHESIZED",
+                "node_class": candidate.node_class,
+                "capability": result.capability,
+                "template_id": result.template_id,
+                "safety": result.safety.value,
+                "manifest": result.manifest,
+                "workflow": result.workflow,
+                "warnings": result.warnings,
+            }
+        except Exception as e:
+            return {"status": "ERROR", "node_class": candidate.node_class,
+                    "reason": str(e)}
