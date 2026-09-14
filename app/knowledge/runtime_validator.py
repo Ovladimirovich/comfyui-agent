@@ -67,7 +67,16 @@ class RuntimeValidator:
         try:
             # Queue the workflow
             prompt = self.comfy_client.workflow_to_prompt(workflow) if hasattr(self.comfy_client, 'workflow_to_prompt') else workflow
-            result = self.comfy_client.queue(prompt)
+            # Transport (S6): предпочитаем публичный API ComfyClient (queue_prompt),
+            # fallback на legacy queue() для моков/старых клиентов.
+            queue_fn = getattr(self.comfy_client, "queue_prompt", None)
+            if queue_fn is None:
+                queue_fn = getattr(self.comfy_client, "queue", None)
+            if queue_fn is None:
+                raise AttributeError(
+                    "ComfyClient: нет queue_prompt()/queue() для постановки workflow в очередь"
+                )
+            result = queue_fn(prompt)
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 return RuntimeEvidence(
@@ -80,7 +89,16 @@ class RuntimeValidator:
             # Wait for completion
             elapsed = 0
             while elapsed < self.max_wait_seconds:
-                history = self.comfy_client.history(prompt_id)
+                # Transport (S6): предпочитаем get_history() (публичный API),
+                # fallback на legacy history() для моков/старых клиентов.
+                history_fn = getattr(self.comfy_client, "get_history", None)
+                if history_fn is None:
+                    history_fn = getattr(self.comfy_client, "history", None)
+                if history_fn is None:
+                    raise AttributeError(
+                        "ComfyClient: нет get_history()/history() для опроса результата"
+                    )
+                history = history_fn(prompt_id)
                 item = history.get(prompt_id)
                 if item is not None:
                     execution_time = (time.time() - start_time) * 1000

@@ -16,6 +16,7 @@ media-типу — он принимает capability (image.generate / video.ge
 """
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Optional
 
@@ -47,6 +48,22 @@ from app.registry.workflow import (
 DEFAULT_WORKFLOWS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "workflows"
 )
+
+
+# --- S6: self-test gate-константы (детерминированные, UNKNOWN → отказ) ---
+
+# Роли нод, для которых standalone self-test допустим (query.classify_role).
+SELF_TEST_ALLOWED_ROLES = frozenset({"head", "processor", "sink"})
+
+# Допустимые cost_tier backend'а для self-test (S1: FREE/TRIAL).
+SELF_TEST_ALLOWED_COST = frozenset({"FREE", "TRIAL"})
+
+# Требуемые входы media/GRAPH-типа → нода требует ассет или готовый graph-вход
+# и не может быть self-валидирована как standalone (S6 минимальный scope, A6).
+SELF_TEST_NEEDS_INPUT_TYPES = frozenset({
+    "IMAGE", "VIDEO", "AUDIO", "MASK",
+    "MODEL", "CLIP", "VAE", "LATENT", "CONDITIONING", "CONTROL_NET",
+})
 
 
 class AgentError(RuntimeError):
@@ -190,6 +207,10 @@ class Agent:
         self.feedback_store = feedback_store
         # S0.5: KnowledgeCore для pre-flight advisory (read-only, non-blocking)
         self.knowledge_core = knowledge_core
+        # S6: кэш отказов self-test (node_class -> sorted refusal reasons).
+        # Непустой список = нода отказана; повторный вызов возвращает кэш без
+        # повторной оценки и БЕЗ исполнения.
+        self._selftest_refusals: dict[str, list[str]] = {}
 
     # --- discovery (media-agnostic) ---
 
@@ -325,24 +346,52 @@ class Agent:
     def _calculate_validation_score(self, workflow: "Workflow") -> int:
         """Кол-во валидированных нод в workflow (S4).
 
-        Каждая нода workflow["nodes"][*]["type"] считается если в
-        self._validated_nodes[type] == True. Для MagicMock-совместимости
-        (тесты S4) допускаем workflow-объекты, у которых есть атрибут .workflow.
+        Каждая нода workflow["nodes"][*]["type"] считается если в validated
+        cache[type] == True.
+
+        S6 (§7): источник валидированных нод — knowledge_core (core-derived,
+        если core задан), иначе legacy cache self._validated_nodes. Для
+        MagicMock\тестов S4 допускаем объекты с атрибутом .workflow; для
+        реальных Workflow — читаем граф из workflow_path.
+
+        Валидными считаются ТОЛЬКО ноды с True (реально выполненные).
         """
         nodes = getattr(workflow, "workflow", None)
+        if not nodes:
+            nodes = self._load_workflow_graph(workflow)
         if not nodes:
             return 0
         node_list = nodes.get("nodes") if isinstance(nodes, dict) else None
         if not node_list:
             return 0
+        validated = (
+            self.knowledge_core.get_validated_nodes()
+            if self.knowledge_core is not None
+            else self._validated_nodes
+        )
         score = 0
         for node in node_list:
             if not isinstance(node, dict):
                 continue
             cls = node.get("type")
-            if cls and self._validated_nodes.get(cls) is True:
+            if cls and validated.get(cls) is True:
                 score += 1
         return score
+
+    @staticmethod
+    def _load_workflow_graph(workflow: "Workflow") -> Optional[dict]:
+        """Прочитать исполнимый граф workflow (workflow.json) из workflow_path.
+
+        Не бросает: недоступный/битый граф → None (обрабатывается как нет данных).
+        """
+        path = getattr(workflow, "workflow_path", None)
+        if not path:
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
 
     def _select_manifest(
         self,
@@ -423,49 +472,367 @@ class Agent:
         return dict(self._validated_nodes)
 
     def _validate_capability_nodes_background(self, capability: str) -> None:
-        """S4: фоновая runtime-валидация нод workflow кандидатов capability.
+        """DEPRECATED (S6) — legacy synchronous shim, сохранён для обратной совместимости.
 
-        Запускает daemon-поток: для каждого workflow в capability вызывает
-        runtime_validator.validate_node(node_type) и обновляет _validated_nodes.
-        Пропускается если runtime_validator не задан или нет валидатора.
+        Исторически — фоновая (daemon-thread) валидация кандидатов capability.
+        С S6 производственный путь — Agent.run_self_test(...); этот метод:
+          - НЕ создаёт потоков (NG3: потоки только в executor.py);
+          - вызывает validate_node(node_class, workflow_dict) с двумя аргументами
+            (исправление сигнатуры S4);
+          - работает синхронно и заполняет legacy cache _validated_nodes.
+        Новые вызовы/интеграции НЕ должны использовать этот метод.
         """
         validator = self.runtime_validator
         if validator is None:
             return
-        import threading as _threading
 
-        from app.knowledge.runtime_validator import RuntimeValidator, ValidationResult
+        from app.knowledge.runtime_validator import ValidationResult
 
-        def _run():
-            for cand in self.registry.by_capability(capability):
-                wf_id = getattr(cand, "workflow_id", None) or getattr(cand, "id", None)
-                ver = getattr(cand, "version", None)
-                if not wf_id:
+        for cand in self.registry.by_capability(capability):
+            wf_id = getattr(cand, "workflow_id", None) or getattr(cand, "id", None)
+            ver = getattr(cand, "version", None)
+            if not wf_id:
+                continue
+            try:
+                wf = self.registry.get(wf_id, ver)
+            except Exception:
+                wf = None
+            if wf is None:
+                continue
+            nodes_data = getattr(wf, "workflow", None)
+            if not isinstance(nodes_data, dict):
+                continue
+            node_list = nodes_data.get("nodes")
+            if not isinstance(node_list, list):
+                continue
+            for node in node_list:
+                node_type = node.get("type") if isinstance(node, dict) else None
+                if not node_type:
                     continue
                 try:
-                    wf = self.registry.get(wf_id, ver)
+                    evidence = validator.validate_node(node_type, nodes_data)
+                    ok = getattr(evidence, "validation_result", None) == ValidationResult.SUCCESS
+                    self._validated_nodes[node_type] = bool(ok)
                 except Exception:
-                    wf = None
-                if wf is None:
-                    continue
-                nodes_data = getattr(wf, "workflow", None)
-                if not isinstance(nodes_data, dict):
-                    continue
-                node_list = nodes_data.get("nodes")
-                if not isinstance(node_list, list):
-                    continue
-                for node in node_list:
-                    node_type = node.get("type") if isinstance(node, dict) else None
-                    if not node_type:
-                        continue
-                    try:
-                        evidence = validator.validate_node(node_type)
-                        ok = getattr(evidence, "validation_result", None) == ValidationResult.SUCCESS
-                        self._validated_nodes[node_type] = bool(ok)
-                    except Exception:
-                        self._validated_nodes[node_type] = False
+                    self._validated_nodes[node_type] = False
 
-        _threading.Thread(target=_run, daemon=True).start()
+    # --- S6: Self-Test (единый явный user-initiated entry point, без потоков) ---
+
+    def run_self_test(
+        self,
+        node_class: str,
+        backend_id: Optional[str] = None,
+        base_url: Optional[str] = None,
+        provider=None,
+    ) -> dict:
+        """S6: единственный явный self-test entry point (детерминированный).
+
+        Аргументы:
+            node_class: имя ноды (например "SaveImage", "Get Request Node").
+            backend_id: выбранный Known ExecutionBackend (S1 cost-gate).
+            base_url: ComfyUI endpoint (опц.), если transport задан через endpoint.
+            provider: ComfyUIProvider (опц.), если transport задан через provider.
+
+        Возвращает dict (никогда не бросает для данных/гейта):
+            status: "refused" | "success" | "failure"
+            refusal_reasons: list[str] (пусто при проходе)
+            workflow_source: "synthesized" | "registry" | None
+            validation_result / claim_status / error_message / ...
+
+        Консерватизм (AD-47): UNKNOWN/неполные данные → отказ. Refusing-нода
+        кэшируется (self._selftest_refusals) — повторный вызов возвращает тот
+        же отказ без повторной оценки и без исполнения. На исполнение идёт
+        ОДИН путь: knowledge_core.validate_runtime (persistence + CONFIRMED).
+        """
+        reasons = self._self_test_gate(node_class, backend_id, provider, base_url)
+        if reasons:
+            return self._self_test_refusal(node_class, backend_id, reasons)
+
+        source = self._self_test_workflow_source(node_class)
+        if source is None:
+            return self._self_test_refusal(node_class, backend_id, ["no_workflow_source"])
+
+        core = self.knowledge_core
+        validator = getattr(core, "_runtime_validator", None)
+        if validator is None:
+            from app.knowledge.runtime_validator import RuntimeValidator
+
+            client = self._self_test_resolve_client(provider, base_url)
+            if client is None:
+                return self._self_test_refusal(node_class, backend_id, ["no_comfy_client"])
+            validator = RuntimeValidator(comfy_client=client)
+            core._runtime_validator = validator
+        elif validator.comfy_client is None:
+            client = self._self_test_resolve_client(provider, base_url)
+            if client is None:
+                return self._self_test_refusal(node_class, backend_id, ["no_comfy_client"])
+            validator.comfy_client = client
+
+        result = core.validate_runtime(node_class, source["workflow"])
+
+        return {
+            "status": "success" if result.get("validation_result") == "SUCCESS" else "failure",
+            "node_class": node_class,
+            "backend_id": self._self_test_backend_id(backend_id),
+            "refusal_reasons": [],
+            "workflow_source": source.get("source"),
+            "capability": source.get("capability"),
+            "template_id": source.get("template_id"),
+            "validation_result": result.get("validation_result"),
+            "claim_status": self._self_test_claim_status(node_class),
+            "execution_time_ms": result.get("execution_time_ms", 0.0),
+            "error_message": result.get("error_message") or "",
+            "output_summary": result.get("output_summary") or "",
+        }
+
+    def _self_test_gate(
+        self,
+        node_class: str,
+        backend_id: Optional[str] = None,
+        provider=None,
+        base_url: Optional[str] = None,
+    ) -> list[str]:
+        """S6 gate: детерминированные предикаты отказа. Пустой список = проход.
+
+        Порядок проверок (S6 design §5-§6):
+          1. needs_knowledge  — knowledge_core не задан;
+          2. unknown_node     — нет схемы ноды (UNKNOWN → отказ);
+          3. forbidden / requires_confirmation — классификация safety;
+          4. not_standalone   — роль ноды вне {head, processor, sink};
+          5. cost_not_free    — backend без FREE/TRIAL tier;
+          6. no_workflow_source — нет ни template, ни registry-графа с нодой;
+          7. needs_input_asset — обязательный media/GRAPH вход (S6 минимальный scope);
+          8. no_comfy_client  — нет транспортного клиента для validate_runtime.
+
+        Отказ кэшируется: повтор refusing-ноды возвращает тот же список из кэша.
+        """
+        cached = self._selftest_refusals.get(node_class)
+        if cached is not None:
+            return list(cached)
+
+        core = self.knowledge_core
+        if core is None:
+            return ["needs_knowledge"]
+
+        schema = core.get_schemas().get(node_class)
+        if schema is None:
+            return ["unknown_node"]
+
+        reasons: list[str] = []
+        try:
+            from app.synthesis.safety import classify_safety
+            from app.synthesis.template import SafetyClass
+
+            safety = classify_safety(
+                schema.python_module, schema.category, node_class
+            )
+            if safety == SafetyClass.FORBIDDEN:
+                # Root-cause отказ: FORBIDDEN — жёсткое «нет», остальные
+                # предикаты (источник/исполнимость) не имеют смысла.
+                reasons = ["forbidden"]
+                self._selftest_refusals[node_class] = reasons
+                return reasons
+            if safety == SafetyClass.REQUIRES_CONFIRMATION:
+                reasons.append("requires_confirmation")
+        except Exception:
+            reasons.append("gate_error")
+
+        if self._self_test_role(schema) not in SELF_TEST_ALLOWED_ROLES:
+            reasons.append("not_standalone")
+
+        backend = self._self_test_backend(backend_id)
+        if backend is None or not self._self_test_cost_allowed(backend):
+            reasons.append("cost_not_free")
+
+        source = self._self_test_workflow_source(node_class)
+        if source is None:
+            reasons.append("no_workflow_source")
+        elif self._self_test_needs_input_asset(schema):
+            reasons.append("needs_input_asset")
+
+        validator = getattr(core, "_runtime_validator", None)
+        if validator is None or validator.comfy_client is None:
+            if self._self_test_resolve_client(provider, base_url) is None:
+                reasons.append("no_comfy_client")
+
+        reasons = sorted(set(reasons))
+        if reasons:
+            self._selftest_refusals[node_class] = reasons
+        return reasons
+
+    def _self_test_refusal(
+        self, node_class: str, backend_id: Optional[str], reasons: list[str]
+    ) -> dict:
+        """S6 отказ: детерминированный ответ. НЕ пишет validated/claims (BLOCK)."""
+        reasons = sorted(set(reasons))
+        self._selftest_refusals.setdefault(node_class, reasons)
+        return {
+            "status": "refused",
+            "node_class": node_class,
+            "backend_id": self._self_test_backend_id(backend_id),
+            "refusal_reasons": reasons,
+            "workflow_source": None,
+            "capability": None,
+            "template_id": None,
+            "validation_result": None,
+            "claim_status": None,
+            "execution_time_ms": 0.0,
+            "error_message": "",
+            "output_summary": "",
+        }
+
+    @staticmethod
+    def _self_test_role(schema) -> str:
+        """Роль ноды из registry-модели (query.classify_role, детерминированно)."""
+        from app.knowledge.queries import classify_role
+
+        return classify_role(schema)
+
+    def _self_test_backend(self, backend_id: Optional[str]) -> Optional[BackendSpec]:
+        """Разрешить backend: явный backend_id, иначе детерминированный default."""
+        if self.backends is None:
+            return None
+        if backend_id is not None:
+            return self.backends.by_id(backend_id)
+        if not self.backends.backends:
+            return None
+        return sorted(self.backends.backends, key=lambda b: b.backend_id)[0]
+
+    def _self_test_backend_id(self, backend_id: Optional[str]) -> str:
+        backend = self._self_test_backend(backend_id)
+        if backend is not None:
+            return backend.backend_id
+        return backend_id or ""
+
+    @staticmethod
+    def _self_test_cost_allowed(backend: BackendSpec) -> bool:
+        """S1 cost-gate: допустимы FREE/TRIAL; PAID/UNKNOWN/None → отказ."""
+        tier = getattr(backend, "cost_tier", None)
+        if tier is None:
+            return False
+        value = tier.value if hasattr(tier, "value") else str(tier)
+        return value in SELF_TEST_ALLOWED_COST
+
+    @staticmethod
+    def _self_test_resolve_client(provider, base_url: Optional[str]):
+        """Разрешить ComfyUI-клиент для validate_runtime (provider > base_url)."""
+        if provider is not None:
+            client = getattr(provider, "client", None)
+            if client is not None:
+                return client
+        if base_url:
+            try:
+                from app.comfy.client import ComfyClient
+
+                return ComfyClient(base_url=base_url)
+            except Exception:
+                return None
+        return None
+
+    def _self_test_workflow_source(self, node_class: str) -> Optional[dict]:
+        """Источник workflow для self-test (детерминированный приоритет):
+
+          1. synthesized — template-based синтез (S2/_try_synthesize_one);
+          2. registry === только если граф уже в API-формате (node_id →
+             {class_type, inputs}); граф русского формата (nodes/links) для
+             исполнения не используется (нет workflow→prompt конвертера, S6 scope).
+        """
+        synthesized = self._self_test_synthesized(node_class)
+        if synthesized is not None:
+            return synthesized
+        return self._self_test_registry_graph(node_class)
+
+    def _self_test_synthesized(self, node_class: str) -> Optional[dict]:
+        """Template-based синтез через существующий S2-путь knowledge_core."""
+        core = self.knowledge_core
+        if core is None:
+            return None
+        schema = core.get_schemas().get(node_class)
+        if schema is None:
+            return None
+        candidates = core.get_candidates().get(node_class) or []
+        if not candidates:
+            try:
+                from app.knowledge.candidates import CandidateGenerator
+
+                candidates = CandidateGenerator().generate(schema)
+            except Exception:
+                candidates = []
+        for cand in candidates:
+            try:
+                result = core._try_synthesize_one(cand, schema)
+            except Exception:
+                result = None
+            if result and result.get("status") == "SYNTHESIZED":
+                return {
+                    "source": "synthesized",
+                    "workflow": result["workflow"],
+                    "capability": result.get("capability"),
+                    "template_id": result.get("template_id"),
+                }
+        return None
+
+    def _self_test_registry_graph(self, node_class: str) -> Optional[dict]:
+        """Registry-источник: нода присутствует в registered workflow
+        граф которого уже в API-формате (исполним в validate_node как есть)."""
+        try:
+            for wf in self.registry.workflows:
+                graph = getattr(wf, "workflow", None) or self._load_workflow_graph(wf)
+                if not isinstance(graph, dict):
+                    continue
+                if node_class in self._workflow_node_types(graph) and self._is_api_format(graph):
+                    return {
+                        "source": "registry",
+                        "workflow": graph,
+                        "capability": getattr(wf, "capability", None) or "",
+                        "template_id": None,
+                        "workflow_id": getattr(wf, "id", None),
+                        "version": getattr(wf, "version", None),
+                    }
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _workflow_node_types(graph: dict) -> set[str]:
+        """Множество class_type/type нод в графе (nodes/links или API-формат)."""
+        types: set[str] = set()
+        if isinstance(graph.get("nodes"), list):
+            for n in graph["nodes"]:
+                if isinstance(n, dict):
+                    t = n.get("type") or n.get("class_type")
+                    if t:
+                        types.add(str(t))
+        for v in graph.values():
+            if isinstance(v, dict) and isinstance(v.get("class_type"), str):
+                types.add(v["class_type"])
+        return types
+
+    @staticmethod
+    def _is_api_format(graph: dict) -> bool:
+        """API/prompt-формат ComfyUI: node_id -> {class_type, inputs} (без nodes/links)."""
+        if "nodes" in graph or "links" in graph:
+            return False
+        return any(
+            isinstance(v, dict) and "class_type" in v and isinstance(v.get("inputs"), dict)
+            for v in graph.values()
+        )
+
+    def _self_test_needs_input_asset(self, schema) -> bool:
+        """S6 минимальный scope: нода с обязательным media/GRAPH-входом
+        не может быть self-валидирована standalone (A6)."""
+        required_types = {f.type for f in schema.input_required}
+        return bool(required_types & SELF_TEST_NEEDS_INPUT_TYPES)
+
+    def _self_test_claim_status(self, node_class: str) -> Optional[str]:
+        """S6: CONFIRMED после успешного validate_runtime (persistence-факт)."""
+        try:
+            for claim in self.knowledge_core.get_confirmed_claims():
+                if getattr(claim, "subject", None) == node_class:
+                    return "CONFIRMED"
+        except Exception:
+            pass
+        return None
 
     # --- S0.5: Knowledge pre-flight (advisory, non-blocking) ---
 

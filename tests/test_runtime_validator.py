@@ -17,11 +17,11 @@ from app.knowledge.core import KnowledgeCore, KnowledgeQuery
 
 @pytest.fixture
 def mock_comfy_client():
-    """Mock ComfyClient для тестов."""
+    """Mock ComfyClient для тестов (совпадает с реальным API: queue_prompt/get_history)."""
     client = MagicMock()
     client.workflow_to_prompt = MagicMock(return_value={"1": {"class_type": "TestNode", "inputs": {}}})
-    client.queue = MagicMock(return_value={"prompt_id": "test-123"})
-    client.history = MagicMock(return_value={
+    client.queue_prompt = MagicMock(return_value={"prompt_id": "test-123"})
+    client.get_history = MagicMock(return_value={
         "test-123": {
             "status": {"status_str": "success"},
             "outputs": {"1": {"images": [{"filename": "test.png"}]}}
@@ -85,23 +85,23 @@ class TestRuntimeValidator:
         evidence = runtime_validator.validate_node("TestNode", workflow)
         assert evidence.validation_result == ValidationResult.SUCCESS
         assert evidence.execution_time_ms > 0
-        mock_comfy_client.queue.assert_called_once()
+        mock_comfy_client.queue_prompt.assert_called_once()
 
     def test_timeout_validation(self, runtime_validator):
         # Mock history to never return result
-        runtime_validator.comfy_client.history.return_value = {}
+        runtime_validator.comfy_client.get_history.return_value = {}
         runtime_validator.max_wait_seconds = 1  # Short timeout for test
         evidence = runtime_validator.validate_node("TestNode", {})
         assert evidence.validation_result == ValidationResult.TIMEOUT
 
     def test_error_validation(self, runtime_validator):
-        runtime_validator.comfy_client.queue.side_effect = RuntimeError("Connection failed")
+        runtime_validator.comfy_client.queue_prompt.side_effect = RuntimeError("Connection failed")
         evidence = runtime_validator.validate_node("TestNode", {})
         assert evidence.validation_result == ValidationResult.ERROR
         assert "Connection failed" in evidence.error_message
 
     def test_failure_validation(self, runtime_validator, mock_comfy_client):
-        mock_comfy_client.history.return_value = {
+        mock_comfy_client.get_history.return_value = {
             "test-123": {
                 "status": {"status_str": "error", "messages": ["Node not found"]},
                 "outputs": {}

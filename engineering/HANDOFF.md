@@ -20,14 +20,29 @@ NEXT RECOMMENDED TASK
 
 > Заполняется перед логической границей сессии. Новая сессия восстанавливает состояние отсюда, не из истории чата. Правила границ сессий — в `AGENTS.md` §Session Boundary Management.
 
-- **Current milestone:** M26 — FROZEN. Ecosystem-First: **S0.5 FROZEN / S1 FROZEN / S2 ACCEPTED WITH DOCUMENTED RUNTIME GAP** (2026-09-13).
-- **Current phase:** S3 (Ecosystem Facts & Provenance Queries) — следующий кандидат, аудит пока не начат.
-- **Current status:** regression subset S0.5+S1+S2 = 82 passed; основной core-suite 154 passed (S2-задача); полный suite ~190+ passed / skips (E2E требуют live ComfyUI).
-- **Allowed work:** S3 read-only forensic audit → design → (approval) → implementation. Docs/commit hygiene.
-- **Forbidden work:** RuntimeValidator repair; `_calculate_validation_score` activation; изменение S0.5/S1/S2 semantics; frozen M25/M26 contracts; per-node cost; числовой confidence; новый provenance-enum (переиспользовать EvidenceTrustLevel/ClaimStatus).
-- **Last completed activity:** S2 acceptance gate: git status собран, runtime proof — synthesized graph принят живым ComfyUI (ImageInvert, ALLOWED), полный файл-результат отложен (пользовательская очередь KSampler); старый `test_knowledge_integration_s2.py` примирён (16 passed/4 skipped).
-- **Pending hygiene:** ~~s2_proof перезапуск~~ **CLOSED (maintenance 2026-09-13):** `815e9fc2`=success, `ComfyUI_s2_00001_.png` (297839 B) в output; ~~коммиты~~ выполнены (S0.5/S1/S2/docs + S3 impl + S3 design); P1 cleanup выполнен по решению автора (удалены TestNode/FailNode/RestartTestNode, реальные записи сохранены).
-- **Session boundary:** при завершении S3 design рекомендовать `START NEW SESSION`.
+- **Current milestone:** M26 — FROZEN. Ecosystem-First: **S0.5 FROZEN / S1 FROZEN / S2 ACCEPTED-**runtime-gap-CLOSED / **S6 ACCEPTED / FROZEN** (2026-09-14).
+- **Current phase:** S6 завершён и заморожен. Следующий кандидат — только по команде автора (НЕ начинать автоматически).
+- **Current status:** S6-набор (gate + validation) 54-55; regression-подмножество S0.5+S1+S2+S3+S4+S6 = 178 passed / 1 skipped; полный suite ~200+ passed / skips (E2E требуют live ComfyUI); pre-existing failure `tests/test_m11_verification.py` (collection: `AgentError: нет workflow с подтверждённой совместимостью`) — подтверждён на HEAD, НЕ из-за S6.
+- **Allowed work:** только по явной команде автора; S6 FROZEN, изменения ядра — через CHANGE_PROTOCOL.
+- **Forbidden work:** новые execution-entry; изменение детерминированного gate/blokировки S6; CLI-обёртка (не создавать); S4/S5/S7/UI/LLM/media/new-storage/new-framework; изменение S0.5/S1/S2 semantics; frozen M25/M26 contracts; per-node cost; числовой confidence; новый provenance-enum.
+- **Last completed activity:** S6 acceptance: реальные ComfyUI схемы (Get Request Node → requires_confirmation+not_standalone+no_workflow_source; PollinationsImageGen → requires_confirmation; transport не вызван; validated 3→3, claims 0→0); `git diff --check` чист; regression-подмножество 178 passed/1 skipped; `scripts/s6_acceptance_check.py` + `docs/ECOSYSTEM_FIRST_S6_IMPLEMENTATION_REPORT.md`; commit `S6: add explicit self-test runtime validation path`.
+- **Pending hygiene:** README/старый `test_knowledge_integration_s2.py` уже примирены ранее; старая S4-тест-миграция моков на реальный транспорт ComfyClient (сделано в S6); worktree для проверки pre-existing failure удалён.
+- **Session boundary:** S6 FROZEN — этап завершён → `START NEW SESSION`.
+
+## HANDOFF — 2026-09-14 (Ecosystem-First S6 — Explicit Self-Test Runtime Validation) ✅ ACCEPTED / FROZEN
+
+- **S6 ACCEPTED / FROZEN.** Единственный production-entry: `Agent.run_self_test(node_class, backend_id=None, base_url=None, provider=None)` → dict (никогда не бросает для данных/гейта). Консерватизм AD-47: UNKNOWN/неполные данные → отказ.
+- **Design:** `docs/ECOSYSTEM_FIRST_S6_DESIGN.md` (16 разделов, §7 — S3 design self-test contract). Report: `docs/ECOSYSTEM_FIRST_S6_IMPLEMENTATION_REPORT.md`.
+- **Gate (детерминированный):** needs_knowledge → unknown_node → `classify_safety` (FORBIDDEN=жёсткий отказ; REQUIRES_CONFIRMATION) → роль `query.classify_role` ∈ {head,processor,sink} → S1 cost (FREE/TRIAL) → workflow_source (template-синтез > registry api-граф) → `needs_input_asset` (обязательный media/GRAPH вход — отказ) → no_comfy_client. Отказ кэшируется (повтор → тот же отказ, без повторной оценки и без исполнения).
+- **Блокировка (BLOCK):** отказ НЕ пишет validated/claims. Единственный executive-путь — `knowledge_core.validate_runtime` (persistence + CONFIRMED-claim).
+- **Транспорт (S6 §6):** `RuntimeValidator` предпочитает `queue_prompt`/`get_history` (публичный API ComfyClient), legacy fallback `queue`/`history` (моки/старые клиенты). ПРЕЖНИЙ ТЕСТ-КОД `test_runtime_validator.py` использовал НЕсуществующие методы — обновлён на реальный API (документированное исключение из «green tests без правок»; подтверждено планом).
+- **Source of truth:** `_calculate_validation_score` — validated-ноды из `knowledge_core` (core-derived), legacy fallback `self._validated_nodes`; реальный граф читается из `workflow_path` (`_load_workflow_graph`).
+- **Deprecated shim:** `_validate_capability_nodes_background` — синхронный, 2-аргументный `validate_node(node_type, workflow_dict)`, БЕЗ `threading`/`asyncio`.
+- **NG-проверки:** нет `threading`/`asyncio`/`async def` в изменённых файлах; `run_self_test` — единственная entry point (grep по `.py`); CLI-инфраструктура НЕ создавалась (запрет автора).
+- **TESTS:** 25 новых `tests/test_self_test_gate.py` (gate-отказы, кэш-повтор без исполнения, BLOCK-незапись, success+CONFIRMED, транспорт, регистрация, core-derived score, shim без потоков). S6-набор 54 passed/1 skipped (E2E — ручной). Regression-подмножество S0.5+S1+S2+S3+S4+S6 = **178 passed / 1 skipped**.
+- **Runtime evidence (реальные схемы из `app/data/knowledge/node_schemas.json`, 1040 шт.):** `Get Request Node` (module `custom_nodes.ComfyUI-HttpRequestNodes`) → refusal `['no_workflow_source','not_standalone','requires_confirmation']`; `PollinationsImageGen` (module `custom_nodes.pollinations-byop`) → refusal `['requires_confirmation']`; transport вызван 0 раз; persistence-записи 0; validated 3→3, claims 0→0. Позитивная ветка на реальных схемах: gate проходят только `LoadImage`/`BatchImagesNode` (гейт синтезован, реальное исполнение требует живого ComfyUI — вне scope).
+- **Pre-existing failure (не S6):** `tests/test_m11_verification.py` — collection error `AgentError: нет workflow с подтверждённой совместимостью`; подтверждён на HEAD worktree (`89e230a`).
+- **NEXT RECOMMENDED TASK:** НЕ начинать S7/cleanup/UI автоматически — по команде автора.
 
 ## RECONCILIATION — 2026-09-13 (Knowledge Core Slice 2 — заявлен, кодом НЕ подтверждён)
 
