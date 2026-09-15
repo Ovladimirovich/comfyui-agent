@@ -670,6 +670,9 @@ Execution temp          — временные копии для транспо�
 POST /api/chat                  — сообщение + опц. attachments
 POST /api/assets                — загрузка ассета
 GET  /api/assets/{id}           — отдача ассета (range)
+GET  /api/nodes                 — read-only: поиск нод в KnowledgeCore (AD-48)
+GET  /api/knowledge             — read-only: explain_node / gap_report (AD-48)
+POST /api/self-test             — S6 self-test ноды (консервативный gate, AD-47)
 GET  /api/jobs/{id}             — статус Job (+progress, outputs)
 POST /api/jobs/{id}/cancel      — отмена
 GET  /api/capabilities          — список capabilities
@@ -678,6 +681,7 @@ GET  /api/runtime               — RuntimeInfo
 ```
 - Поток ответов агента: SSE (или WebSocket) от `/api/chat`.
 - Фронтенд и бэкенд НЕ придумывают свой API — контракт зафиксирован здесь.
+- **Статус реализации (AD-48, честный):** `/api/chat`, `/api/assets`, `/api/assets/{id}`, `/api/nodes`, `/api/knowledge`, `/api/self-test` — реализованы (последние три — read-only wiring знаний, S3/S6 → UI). `/api/jobs/{id}`, `/api/jobs/{id}/cancel`, `/api/capabilities`, `/api/workflows`, `/api/runtime` — целевые контракты §21, НЕ реализованы: UI-1 в честном DRAFT-статусе (tests/test_ui_section21.py: тесты фиксируют целевой контракт и переведены в skip, а не удалены).
 
 ### UI (v1, минимальный — НЕ Control Center)
 ```text

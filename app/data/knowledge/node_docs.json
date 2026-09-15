@@ -1,0 +1,3030 @@
+{
+  "ComfyUI-HttpRequestNodes": {
+    "node_class": "ComfyUI-HttpRequestNodes",
+    "display_name": "ComfyUI-HttpRequestNodes",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1137962,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Get Request Node": {
+    "node_class": "Get Request Node",
+    "display_name": "Get Request Node",
+    "category": "RequestNode/Get Request",
+    "purpose": "HTTP GET запрос",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "target_url": {
+        "name": "target_url",
+        "type": "STRING",
+        "required": true,
+        "description": "URL для запроса"
+      },
+      "headers": {
+        "name": "headers",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Заголовки HTTP"
+      },
+      "query_list": {
+        "name": "query_list",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Параметры запроса (query string)"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ как текст"
+      },
+      "file": {
+        "name": "file",
+        "type": "BYTES",
+        "required": false,
+        "description": "Ответ как байты"
+      },
+      "json": {
+        "name": "json",
+        "type": "JSON",
+        "required": false,
+        "description": "Ответ как JSON"
+      },
+      "any": {
+        "name": "any",
+        "type": "ANY",
+        "required": false,
+        "description": "Ответ как байты"
+      }
+    },
+    "configuration": {
+      "proxy": "Не используется (proxies={http:None, https:None})",
+      "timeout": "System default",
+      "retry": "Настраивается через Retry Settings Node"
+    },
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "target_url": "https://jsonplaceholder.typicode.com/posts/1"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Post Request Node",
+      "Rest Api Node",
+      "KeyValueNode"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1146202,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Post Request Node": {
+    "node_class": "Post Request Node",
+    "display_name": "Post Request Node",
+    "category": "RequestNode/Post Request",
+    "purpose": "HTTP POST запрос с JSON body",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "target_url": {
+        "name": "target_url",
+        "type": "STRING",
+        "required": true,
+        "description": "URL для запроса"
+      },
+      "headers": {
+        "name": "headers",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Заголовки HTTP"
+      },
+      "body": {
+        "name": "body",
+        "type": "STRING",
+        "required": false,
+        "description": "JSON body запроса"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ как текст"
+      },
+      "file": {
+        "name": "file",
+        "type": "BYTES",
+        "required": false,
+        "description": "Ответ как байты"
+      },
+      "json": {
+        "name": "json",
+        "type": "JSON",
+        "required": false,
+        "description": "Ответ как JSON"
+      },
+      "any": {
+        "name": "any",
+        "type": "ANY",
+        "required": false,
+        "description": "Ответ как байты"
+      }
+    },
+    "configuration": {
+      "proxy": "Не используется",
+      "content-type": "application/json"
+    },
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "target_url": "https://jsonplaceholder.typicode.com/posts",
+          "body": "{\"title\": \"foo\"}"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Get Request Node",
+      "Rest Api Node",
+      "Form Post Request Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1147728,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Form Post Request Node": {
+    "node_class": "Form Post Request Node",
+    "display_name": "Form Post Request Node",
+    "category": "RequestNode/Post Request",
+    "purpose": "HTTP POST запрос с form-data (multipart)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "target_url": {
+        "name": "target_url",
+        "type": "STRING",
+        "required": true,
+        "description": "URL для запроса"
+      },
+      "headers": {
+        "name": "headers",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Заголовки HTTP"
+      },
+      "form_fields": {
+        "name": "form_fields",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Поля формы"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ как текст"
+      },
+      "json": {
+        "name": "json",
+        "type": "JSON",
+        "required": false,
+        "description": "Ответ как JSON"
+      },
+      "any": {
+        "name": "any",
+        "type": "ANY",
+        "required": false,
+        "description": "Ответ как байты"
+      }
+    },
+    "configuration": {},
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "target_url": "https://httpbin.org/post",
+          "form_fields": {}
+        }
+      }
+    ],
+    "related_nodes": [
+      "Post Request Node",
+      "Media Form Post Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1148863,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Rest Api Node": {
+    "node_class": "Rest Api Node",
+    "display_name": "Rest Api Node",
+    "category": "RequestNode/REST API",
+    "purpose": "Универсальный HTTP запрос (GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "target_url": {
+        "name": "target_url",
+        "type": "STRING",
+        "required": true,
+        "description": "URL для запроса"
+      },
+      "method": {
+        "name": "method",
+        "type": "ENUM [GET",
+        "required": true,
+        "description": "HTTP метод",
+        "options": [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE",
+          "PATCH",
+          "HEAD",
+          "OPTIONS"
+        ]
+      },
+      "headers": {
+        "name": "headers",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Заголовки HTTP"
+      },
+      "body": {
+        "name": "body",
+        "type": "STRING",
+        "required": false,
+        "description": "Тело запроса"
+      },
+      "retry_config": {
+        "name": "retry_config",
+        "type": "RETRY_SETTING",
+        "required": false,
+        "description": "Конфигурация retry"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ как текст"
+      },
+      "file": {
+        "name": "file",
+        "type": "BYTES",
+        "required": false,
+        "description": "Ответ как байты"
+      },
+      "json": {
+        "name": "json",
+        "type": "JSON",
+        "required": false,
+        "description": "Ответ как JSON"
+      },
+      "headers": {
+        "name": "headers",
+        "type": "DICT",
+        "required": false,
+        "description": "Заголовки ответа"
+      },
+      "status_code": {
+        "name": "status_code",
+        "type": "INT",
+        "required": false,
+        "description": "HTTP статус код"
+      },
+      "any": {
+        "name": "any",
+        "type": "ANY",
+        "required": false,
+        "description": "Ответ как байты"
+      }
+    },
+    "configuration": {
+      "supports_retry": "Да (через Retry Settings Node)",
+      "timeout": "System default"
+    },
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "target_url": "https://api.example.com/data",
+          "method": "GET"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Get Request Node",
+      "Post Request Node",
+      "Retry Settings Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1150692,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Binary Post Request Node": {
+    "node_class": "Binary Post Request Node",
+    "display_name": "Binary Post Request Node",
+    "category": "RequestNode/REST API",
+    "purpose": "Отправка сырых байтов (application/octet-stream)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "target_url": {
+        "name": "target_url",
+        "type": "STRING",
+        "required": true,
+        "description": "URL для запроса"
+      },
+      "body": {
+        "name": "body",
+        "type": "BYTES",
+        "required": true,
+        "description": "Данные для отправки"
+      },
+      "method": {
+        "name": "method",
+        "type": "ENUM [POST",
+        "required": true,
+        "description": "HTTP метод",
+        "options": [
+          "POST",
+          "PUT",
+          "PATCH"
+        ]
+      },
+      "content_type": {
+        "name": "content_type",
+        "type": "STRING",
+        "required": false,
+        "description": "Content-Type заголовок"
+      },
+      "headers": {
+        "name": "headers",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Дополнительные заголовки"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ как текст"
+      },
+      "response_bytes": {
+        "name": "response_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Ответ как байты"
+      },
+      "json": {
+        "name": "json",
+        "type": "JSON",
+        "required": false,
+        "description": "Ответ как JSON"
+      },
+      "status_code": {
+        "name": "status_code",
+        "type": "INT",
+        "required": false,
+        "description": "HTTP статус код"
+      },
+      "response_headers": {
+        "name": "response_headers",
+        "type": "DICT",
+        "required": false,
+        "description": "Заголовки ответа"
+      }
+    },
+    "configuration": {},
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "target_url": "https://api.example.com/upload",
+          "method": "POST",
+          "content_type": "application/octet-stream"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Media Form Post Node",
+      "Rest Api Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.115226,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Media Form Post Node": {
+    "node_class": "Media Form Post Node",
+    "display_name": "Media Form Post Node",
+    "category": "RequestNode/Post Request",
+    "purpose": "Отправка мультимедиа (IMAGE/AUDIO/VIDEO) через multipart/form-data",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "target_url": {
+        "name": "target_url",
+        "type": "STRING",
+        "required": true,
+        "description": "URL для запроса"
+      },
+      "form_fields": {
+        "name": "form_fields",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Поля формы"
+      },
+      "headers": {
+        "name": "headers",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Заголовки"
+      },
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение ComfyUI"
+      },
+      "image_bytes": {
+        "name": "image_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты изображения"
+      },
+      "audio_bytes": {
+        "name": "audio_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты аудио"
+      },
+      "video_bytes": {
+        "name": "video_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты видео"
+      },
+      "field_name": {
+        "name": "field_name",
+        "type": "STRING",
+        "required": false,
+        "description": "Имя поля формы для файлов",
+        "default": "\"file\""
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ как текст"
+      },
+      "response_bytes": {
+        "name": "response_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Ответ как байты"
+      },
+      "json": {
+        "name": "json",
+        "type": "JSON",
+        "required": false,
+        "description": "Ответ как JSON"
+      },
+      "status_code": {
+        "name": "status_code",
+        "type": "INT",
+        "required": false,
+        "description": "HTTP статус код"
+      },
+      "response_headers": {
+        "name": "response_headers",
+        "type": "DICT",
+        "required": false,
+        "description": "Заголовки ответа"
+      }
+    },
+    "configuration": {},
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "target_url": "https://api.example.com/upload",
+          "field_name": "file"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Form Post Request Node",
+      "Binary Post Request Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1154153,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Key/Value Node": {
+    "node_class": "Key/Value Node",
+    "display_name": "Key/Value Node",
+    "category": "RequestNode/KeyValue",
+    "purpose": "Создаёт пары ключ-значение для HTTP заголовков и параметров",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "key": {
+        "name": "key",
+        "type": "STRING",
+        "required": false,
+        "description": "Ключ"
+      },
+      "value": {
+        "name": "value",
+        "type": "STRING",
+        "required": false,
+        "description": "Значение"
+      }
+    },
+    "outputs_documented": {
+      "KEY_VALUE": {
+        "name": "KEY_VALUE",
+        "type": "KEY_VALUE",
+        "required": false,
+        "description": "Пара ключ-значение"
+      }
+    },
+    "configuration": {},
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "key": "Authorization",
+          "value": "Bearer token123"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Get Request Node",
+      "Post Request Node",
+      "Rest Api Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.115483,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Retry Settings Node": {
+    "node_class": "Retry Settings Node",
+    "display_name": "Retry Settings Node",
+    "category": "RequestNode/KeyValue",
+    "purpose": "Конфигурация повторных попыток для HTTP запросов",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "max_retries": {
+        "name": "max_retries",
+        "type": "INT",
+        "required": false,
+        "description": "Максимальное количество попыток",
+        "default": "3"
+      },
+      "retry_delay": {
+        "name": "retry_delay",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Задержка между попытками (секунды)",
+        "default": "1.0"
+      }
+    },
+    "outputs_documented": {
+      "RETRY_SETTING": {
+        "name": "RETRY_SETTING",
+        "type": "RETRY_SETTING",
+        "required": false,
+        "description": "Конфигурация retry"
+      }
+    },
+    "configuration": {},
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "max_retries": 5,
+          "retry_delay": 2.0
+        }
+      }
+    ],
+    "related_nodes": [
+      "Rest Api Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1155639,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "String Replace Node": {
+    "node_class": "String Replace Node",
+    "display_name": "String Replace Node",
+    "category": "RequestNode/Utils",
+    "purpose": "Замена подстрок в строке (плейсхолдеры)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Исходная строка"
+      },
+      "old_string": {
+        "name": "old_string",
+        "type": "STRING",
+        "required": false,
+        "description": "Строка для замены"
+      },
+      "new_string": {
+        "name": "new_string",
+        "type": "STRING",
+        "required": false,
+        "description": "Новая строка"
+      }
+    },
+    "outputs_documented": {
+      "output_string": {
+        "name": "output_string",
+        "type": "STRING",
+        "required": false,
+        "description": "Результат замены"
+      }
+    },
+    "configuration": {},
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "text": "Hello {{name}}",
+          "old_string": "{{name}}",
+          "new_string": "World"
+        }
+      }
+    ],
+    "related_nodes": [
+      "Key/Value Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1156528,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Image To Base64 Node": {
+    "node_class": "Image To Base64 Node",
+    "display_name": "Image To Base64 Node",
+    "category": "RequestNode/Converters",
+    "purpose": "Конвертирует ComfyUI IMAGE → Base64 строку",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение ComfyUI"
+      }
+    },
+    "outputs_documented": {
+      "base64_string": {
+        "name": "base64_string",
+        "type": "STRING",
+        "required": false,
+        "description": "Base64 строка изображения"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Image To Blob Node",
+      "Blob To Image Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1157053,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Image To Blob Node": {
+    "node_class": "Image To Blob Node",
+    "display_name": "Image To Blob Node",
+    "category": "RequestNode/Converters",
+    "purpose": "Конвертирует ComfyUI IMAGE → байты (PNG)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение ComfyUI"
+      }
+    },
+    "outputs_documented": {
+      "image_bytes": {
+        "name": "image_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты изображения (PNG)"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Image To Base64 Node",
+      "Blob To Image Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1157568,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Audio To Blob Node": {
+    "node_class": "Audio To Blob Node",
+    "display_name": "Audio To Blob Node",
+    "category": "RequestNode/Converters",
+    "purpose": "Конвертирует ComfyUI AUDIO → байты WAV",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "audio": {
+        "name": "audio",
+        "type": "AUDIO",
+        "required": false,
+        "description": "Аудио ComfyUI"
+      }
+    },
+    "outputs_documented": {
+      "wav_bytes": {
+        "name": "wav_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты WAV"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Blob To Audio Node",
+      "Base64 To Audio Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.115805,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Video To Blob Node": {
+    "node_class": "Video To Blob Node",
+    "display_name": "Video To Blob Node",
+    "category": "RequestNode/Converters",
+    "purpose": "Конвертирует Comfyui VIDEO → байты (MP4/GIF)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "video": {
+        "name": "video",
+        "type": "VIDEO",
+        "required": false,
+        "description": "Видео ComfyUI"
+      },
+      "format": {
+        "name": "format",
+        "type": "ENUM [MP4",
+        "required": false,
+        "description": "Выходной формат",
+        "default": "mp4",
+        "options": [
+          "mp4",
+          "gif"
+        ]
+      },
+      "fps": {
+        "name": "fps",
+        "type": "INT",
+        "required": false,
+        "description": "Кадров в секунду",
+        "default": "24"
+      }
+    },
+    "outputs_documented": {
+      "video_bytes": {
+        "name": "video_bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты видео"
+      },
+      "frame_count": {
+        "name": "frame_count",
+        "type": "INT",
+        "required": false,
+        "description": "Количество кадров"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Blob To Video Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1158872,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Base64 To Audio Node": {
+    "node_class": "Base64 To Audio Node",
+    "display_name": "Base64 To Audio Node",
+    "category": "RequestNode/Converters",
+    "purpose": "Конвертирует Base64 строку → ComfyUI AUDIO",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "base64_string": {
+        "name": "base64_string",
+        "type": "STRING",
+        "required": false,
+        "description": "Base64 строка WAV"
+      }
+    },
+    "outputs_documented": {
+      "audio": {
+        "name": "audio",
+        "type": "AUDIO",
+        "required": false,
+        "description": "Аудио ComfyUI"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Audio To Blob Node",
+      "Blob To Audio Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.115933,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Blob To Image Node": {
+    "node_class": "Blob To Image Node",
+    "display_name": "Blob To Image Node",
+    "category": "RequestNode/Utils",
+    "purpose": "Конвертирует байты (PNG/JPEG/BMP/WebP) → ComfyUI IMAGE",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "bytes": {
+        "name": "bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты изображения"
+      }
+    },
+    "outputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение ComfyUI [batch, height, width, channels]"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Image To Blob Node",
+      "Blob To Batch Image Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1159792,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Blob To Batch Image Node": {
+    "node_class": "Blob To Batch Image Node",
+    "display_name": "Blob To Batch Image Node",
+    "category": "RequestNode/Utils",
+    "purpose": "Конвертирует байты → ComfyUI IMAGE (поддержка multi-page TIFF)",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "bytes": {
+        "name": "bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты изображения"
+      }
+    },
+    "outputs_documented": {
+      "images": {
+        "name": "images",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение ComfyUI"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Blob To Image Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1160278,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Blob To Audio Node": {
+    "node_class": "Blob To Audio Node",
+    "display_name": "Blob To Audio Node",
+    "category": "RequestNode/Utils",
+    "purpose": "Конвертирует байты WAV → ComfyUI AUDIO",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "bytes": {
+        "name": "bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты WAV"
+      }
+    },
+    "outputs_documented": {
+      "audio": {
+        "name": "audio",
+        "type": "AUDIO",
+        "required": false,
+        "description": "Аудио ComfyUI {\"waveform\": [batch, channels, samples], \"sample_rate\": int}"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Audio To Blob Node",
+      "Base64 To Audio Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1160774,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Blob To Video Node": {
+    "node_class": "Blob To Video Node",
+    "display_name": "Blob To Video Node",
+    "category": "RequestNode/Utils",
+    "purpose": "Конвертирует байты видео (MP4/GIF/WebM) → ComfyUI VIDEO",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "bytes": {
+        "name": "bytes",
+        "type": "BYTES",
+        "required": false,
+        "description": "Байты видео"
+      }
+    },
+    "outputs_documented": {
+      "video": {
+        "name": "video",
+        "type": "VIDEO",
+        "required": false,
+        "description": "Видео ComfyUI (совместимо с VHS нодами)"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Video To Blob Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.1161246,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "Chainable Upload Image": {
+    "node_class": "Chainable Upload Image",
+    "display_name": "Chainable Upload Image",
+    "category": "RequestNode/Utils",
+    "purpose": "Объединяет изображения в батч для отправки",
+    "python_module": "custom_nodes.ComfyUI-HttpRequestNodes",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение ComfyUI"
+      },
+      "image_batch_in": {
+        "name": "image_batch_in",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Предыдущий батч"
+      }
+    },
+    "outputs_documented": {
+      "image_batch_out": {
+        "name": "image_batch_out",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Батч изображений"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "Image To Blob Node",
+      "Media Form Post Node"
+    ],
+    "source_file": "docs/node_docs/HttpRequestNodes.md",
+    "ingested_at": 1788718920.116181,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ComfyUI-Agnes-AI": {
+    "node_class": "ComfyUI-Agnes-AI",
+    "display_name": "ComfyUI-Agnes-AI",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/AgnesAI.md",
+    "ingested_at": 1788719507.452839,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "AgnesVideo": {
+    "node_class": "AgnesVideo",
+    "display_name": "AgnesVideo",
+    "category": "AILab/Agnes-AI",
+    "purpose": "Генерация видео через Agnes API (текст→видео, изображение→видео)",
+    "python_module": "custom_nodes.ComfyUI-Agnes-AI",
+    "inputs_documented": {
+      "mode": {
+        "name": "mode",
+        "type": "ENUM [TEXT TO VIDEO",
+        "required": false,
+        "description": "Режим генерации",
+        "default": "Text To Video",
+        "options": [
+          "Text To Video",
+          "Image To Video",
+          "First and Last Frame"
+        ]
+      },
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт для генерации"
+      },
+      "quality": {
+        "name": "quality",
+        "type": "ENUM [360P",
+        "required": false,
+        "description": "Качество видео",
+        "default": "720p",
+        "options": [
+          "360p",
+          "720p"
+        ]
+      },
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение (для Image To Video)"
+      },
+      "first_frame": {
+        "name": "first_frame",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Первый кадр (для First and Last Frame)"
+      },
+      "last_frame": {
+        "name": "last_frame",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Последний кадр (для First and Last Frame)"
+      },
+      "duration": {
+        "name": "duration",
+        "type": "INT",
+        "required": false,
+        "description": "Длительность в секундах",
+        "default": "4"
+      },
+      "seed": {
+        "name": "seed",
+        "type": "INT",
+        "required": false,
+        "description": "Сид для воспроизводимости",
+        "default": "0"
+      }
+    },
+    "outputs_documented": {
+      "video": {
+        "name": "video",
+        "type": "VIDEO",
+        "required": false,
+        "description": "Сгенерированное видео"
+      },
+      "frames": {
+        "name": "frames",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Все кадры видео"
+      },
+      "last_frame": {
+        "name": "last_frame",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Последний кадр"
+      },
+      "audio": {
+        "name": "audio",
+        "type": "AUDIO",
+        "required": false,
+        "description": "Аудио из видео (если есть)"
+      }
+    },
+    "configuration": {
+      "API key": "через `agnes_config.json` или панель настроек",
+      "Base URL": "https://api.agnes.ai/v1",
+      "Timeout": "system default"
+    },
+    "examples": [
+      {
+        "name": "Example",
+        "workflow": {
+          "mode": "Text To Video",
+          "prompt": "a cat walking on the beach",
+          "quality": "720p"
+        }
+      }
+    ],
+    "related_nodes": [
+      "AgnesImage",
+      "AgnesText"
+    ],
+    "source_file": "docs/node_docs/AgnesAI.md",
+    "ingested_at": 1788719507.4537504,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "AgnesImage": {
+    "node_class": "AgnesImage",
+    "display_name": "AgnesImage",
+    "category": "AILab/Agnes-AI",
+    "purpose": "Генерация изображений через Agnes API",
+    "python_module": "custom_nodes.ComfyUI-Agnes-AI",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт для генерации"
+      },
+      "quality": {
+        "name": "quality",
+        "type": "ENUM [STANDARD",
+        "required": false,
+        "description": "Качество",
+        "default": "standard",
+        "options": [
+          "standard",
+          "high"
+        ]
+      },
+      "size": {
+        "name": "size",
+        "type": "ENUM [512X512",
+        "required": false,
+        "description": "Размер",
+        "default": "1024x1024",
+        "options": [
+          "512x512",
+          "768x768",
+          "1024x1024"
+        ]
+      },
+      "seed": {
+        "name": "seed",
+        "type": "INT",
+        "required": false,
+        "description": "Сид для воспроизводимости",
+        "default": "0"
+      }
+    },
+    "outputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Сгенерированное изображение"
+      }
+    },
+    "configuration": {
+      "API key": "через `agnes_config.json`"
+    },
+    "examples": [],
+    "related_nodes": [
+      "AgnesVideo",
+      "AgnesText"
+    ],
+    "source_file": "docs/node_docs/AgnesAI.md",
+    "ingested_at": 1788719507.4538865,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "AgnesText": {
+    "node_class": "AgnesText",
+    "display_name": "AgnesText",
+    "category": "AILab/Agnes-AI",
+    "purpose": "Генерация текста через Agnes API",
+    "python_module": "custom_nodes.ComfyUI-Agnes-AI",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт"
+      },
+      "max_tokens": {
+        "name": "max_tokens",
+        "type": "INT",
+        "required": false,
+        "description": "Максимальная длина ответа",
+        "default": "512"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Сгенерированный текст"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "AgnesImage",
+      "AgnesVideo"
+    ],
+    "source_file": "docs/node_docs/AgnesAI.md",
+    "ingested_at": 1788719507.4539535,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ComfyUI-Qwen-VL-API": {
+    "node_class": "ComfyUI-Qwen-VL-API",
+    "display_name": "ComfyUI-Qwen-VL-API",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/QwenVL.md",
+    "ingested_at": 1788719507.46006,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWenVL_API_S_Zho": {
+    "node_class": "QWenVL_API_S_Zho",
+    "display_name": "QWenVL_API_S_Zho",
+    "category": "QWenVL/Chinese",
+    "purpose": "Распознавание текста на изображении (Chinese OCR)",
+    "python_module": "custom_nodes.ComfyUI-Qwen-VL-API",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Дополнительный запрос"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Распознанный текст"
+      }
+    },
+    "configuration": {
+      "API key": "через `config.json` (QWENVL_API_KEY)"
+    },
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/QwenVL.md",
+    "ingested_at": 1788719507.4601479,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWenVL_API_S_Multi_Zho": {
+    "node_class": "QWenVL_API_S_Multi_Zho",
+    "display_name": "QWenVL_API_S_Multi_Zho",
+    "category": "QWenVL/Multi",
+    "purpose": "Многоязычное распознавание текста на изображении",
+    "python_module": "custom_nodes.ComfyUI-Qwen-VL-API",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Дополнительный запрос"
+      },
+      "language": {
+        "name": "language",
+        "type": "STRING",
+        "required": false,
+        "description": "Язык распознавания",
+        "default": "\"auto\""
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Распознанный текст"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/QwenVL.md",
+    "ingested_at": 1788719507.4602294,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "comfyui-reactor": {
+    "node_class": "comfyui-reactor",
+    "display_name": "comfyui-reactor",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4650874,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ReActor": {
+    "node_class": "ReActor",
+    "display_name": "ReActor",
+    "category": "ReActor",
+    "purpose": "Основной нод для face swap (замена лица на изображении)",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "enabled": {
+        "name": "enabled",
+        "type": "BOOLEAN",
+        "required": false,
+        "description": "Включить/выключить",
+        "default": "True"
+      },
+      "input_image": {
+        "name": "input_image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "swap_model": {
+        "name": "swap_model",
+        "type": "ENUM: [INSWAPPER_128",
+        "required": false,
+        "description": "Модель swap",
+        "options": [
+          "inswapper_128",
+          "insightface_i1",
+          "insightface_i2",
+          "..."
+        ]
+      },
+      "facedetection": {
+        "name": "facedetection",
+        "type": "ENUM: [RETINAFACE_RESNET50",
+        "required": false,
+        "description": "Детектор лиц",
+        "options": [
+          "retinaface_resnet50",
+          "retinaface_mobile0.25",
+          "YOLOv5l",
+          "YOLOv5n"
+        ]
+      },
+      "face_restore_model": {
+        "name": "face_restore_model",
+        "type": "ENUM: [GFPGAN_1.4",
+        "required": false,
+        "description": "Модель восстановления",
+        "options": [
+          "gfpgan_1.4",
+          "CodeFormer",
+          "RestoreFormer"
+        ]
+      },
+      "face_restore_visibility": {
+        "name": "face_restore_visibility",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Видимость восстановления",
+        "default": "1, min: 0.1, max: 1"
+      },
+      "codeformer_weight": {
+        "name": "codeformer_weight",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Вес CodeFormer",
+        "default": "0.5, min: 0, max: 1"
+      },
+      "detect_gender_input": {
+        "name": "detect_gender_input",
+        "type": "ENUM: [NO",
+        "required": false,
+        "description": "Пол входного лица",
+        "default": "no",
+        "options": [
+          "no",
+          "female",
+          "male"
+        ]
+      },
+      "detect_gender_source": {
+        "name": "detect_gender_source",
+        "type": "ENUM: [NO",
+        "required": false,
+        "description": "Пол источника",
+        "default": "no",
+        "options": [
+          "no",
+          "female",
+          "male"
+        ]
+      },
+      "input_faces_index": {
+        "name": "input_faces_index",
+        "type": "STRING",
+        "required": false,
+        "description": "Индексы входных лиц (через запятую)",
+        "default": "\"0\""
+      },
+      "source_faces_index": {
+        "name": "source_faces_index",
+        "type": "STRING",
+        "required": false,
+        "description": "Индексы исходных лиц",
+        "default": "\"0\""
+      }
+    },
+    "outputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение с заменённым лицом"
+      },
+      "face_model": {
+        "name": "face_model",
+        "type": "FACE_MODEL",
+        "required": false,
+        "description": "Сохранённая модель лица"
+      },
+      "original_image": {
+        "name": "original_image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Исходное изображение"
+      }
+    },
+    "configuration": {
+      "Models": "загружаются автоматически при первом использовании",
+      "Device": "CPU/GPU (авто)"
+    },
+    "examples": [],
+    "related_nodes": [
+      "LoadFaceModel",
+      "RestoreFace",
+      "MaskHelper"
+    ],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4656591,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "LoadFaceModel": {
+    "node_class": "LoadFaceModel",
+    "display_name": "LoadFaceModel",
+    "category": "ReActor",
+    "purpose": "Загрузка модели лица из файла",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "face_model": {
+        "name": "face_model",
+        "type": "ENUM",
+        "required": false,
+        "description": "Название модели лица"
+      }
+    },
+    "outputs_documented": {
+      "FACE_MODEL": {
+        "name": "FACE_MODEL",
+        "type": "FACE_MODEL",
+        "required": false,
+        "description": "Модель лица"
+      },
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Название модели"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4657233,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "RestoreFace": {
+    "node_class": "RestoreFace",
+    "display_name": "RestoreFace",
+    "category": "ReActor",
+    "purpose": "Восстановление лиц на изображении",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "facedetection": {
+        "name": "facedetection",
+        "type": "ENUM: [RETINAFACE_RESNET50",
+        "required": false,
+        "description": "Детектор",
+        "options": [
+          "retinaface_resnet50",
+          "retinaface_mobile0.25",
+          "YOLOv5l",
+          "YOLOv5n"
+        ]
+      },
+      "model": {
+        "name": "model",
+        "type": "ENUM: [GFPGAN_1.4",
+        "required": false,
+        "description": "Модель восстановления",
+        "options": [
+          "gfpgan_1.4",
+          "CodeFormer",
+          "RestoreFormer"
+        ]
+      },
+      "visibility": {
+        "name": "visibility",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Видимость",
+        "default": "1"
+      },
+      "codeformer_weight": {
+        "name": "codeformer_weight",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Вес CodeFormer",
+        "default": "0.5"
+      }
+    },
+    "outputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Восстановленное изображение"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4658341,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "RestoreFaceAdvanced": {
+    "node_class": "RestoreFaceAdvanced",
+    "display_name": "RestoreFaceAdvanced",
+    "category": "ReActor",
+    "purpose": "Продвинутое восстановление лиц",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "facedetection": {
+        "name": "facedetection",
+        "type": "ENUM",
+        "required": false,
+        "description": "Детектор"
+      },
+      "model": {
+        "name": "model",
+        "type": "ENUM",
+        "required": false,
+        "description": "Модель"
+      },
+      "visibility": {
+        "name": "visibility",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Видимость"
+      },
+      "codeformer_weight": {
+        "name": "codeformer_weight",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Вес CodeFormer"
+      },
+      "face_selection": {
+        "name": "face_selection",
+        "type": "ENUM: [ALL",
+        "required": false,
+        "description": "Выбор лиц",
+        "default": "all",
+        "options": [
+          "all",
+          "filter",
+          "largest"
+        ]
+      },
+      "sort_by": {
+        "name": "sort_by",
+        "type": "ENUM: [AREA",
+        "required": false,
+        "description": "Сортировка",
+        "default": "area",
+        "options": [
+          "area",
+          "x_position",
+          "y_position",
+          "detection_confidence"
+        ]
+      },
+      "reverse_order": {
+        "name": "reverse_order",
+        "type": "BOOLEAN",
+        "required": false,
+        "description": "Реверс порядка",
+        "default": "False"
+      },
+      "take_start": {
+        "name": "take_start",
+        "type": "INT",
+        "required": false,
+        "description": "Начальный индекс",
+        "default": "0"
+      }
+    },
+    "outputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Восстановленное изображение"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.466006,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "MaskHelper": {
+    "node_class": "MaskHelper",
+    "display_name": "MaskHelper",
+    "category": "ReActor",
+    "purpose": "Создание масок для face swap (SAM, bbox, segm)",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "mask_type": {
+        "name": "mask_type",
+        "type": "ENUM: [BBOX/ALL",
+        "required": false,
+        "description": "Тип маски",
+        "options": [
+          "bbox/all",
+          "segm/all",
+          "sam/all"
+        ]
+      },
+      "model": {
+        "name": "model",
+        "type": "STRING",
+        "required": false,
+        "description": "Модель (SAM/bbox/segm)"
+      },
+      "bbox_x1": {
+        "name": "bbox_x1",
+        "type": "INT",
+        "required": false,
+        "description": "Левая граница",
+        "default": "0"
+      },
+      "bbox_y1": {
+        "name": "bbox_y1",
+        "type": "INT",
+        "required": false,
+        "description": "Верхняя граница",
+        "default": "0"
+      },
+      "bbox_x2": {
+        "name": "bbox_x2",
+        "type": "INT",
+        "required": false,
+        "description": "Правая граница",
+        "default": "1024"
+      },
+      "bbox_y2": {
+        "name": "bbox_y2",
+        "type": "INT",
+        "required": false,
+        "description": "Нижняя граница",
+        "default": "1024"
+      }
+    },
+    "outputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Исходное изображение"
+      },
+      "MASK": {
+        "name": "MASK",
+        "type": "MASK",
+        "required": false,
+        "description": "Маска"
+      },
+      "masked_image": {
+        "name": "masked_image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "masked изображение"
+      },
+      "mask_color": {
+        "name": "mask_color",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Цветная маска"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4661722,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ReActorOptions": {
+    "node_class": "ReActorOptions",
+    "display_name": "ReActorOptions",
+    "category": "ReActor",
+    "purpose": "Настройки порядка лиц",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "input_faces_order": {
+        "name": "input_faces_order",
+        "type": "ENUM: [LEFT-RIGHT",
+        "required": false,
+        "description": "Порядок входных лиц",
+        "default": "large-small",
+        "options": [
+          "left-right",
+          "right-left",
+          "top-bottom",
+          "bottom-top",
+          "small-large",
+          "large-small"
+        ]
+      },
+      "input_faces_index": {
+        "name": "input_faces_index",
+        "type": "STRING",
+        "required": false,
+        "description": "Индексы",
+        "default": "\"0\""
+      },
+      "detect_gender_input": {
+        "name": "detect_gender_input",
+        "type": "ENUM: [NO",
+        "required": false,
+        "description": "Пол",
+        "default": "no",
+        "options": [
+          "no",
+          "female",
+          "male"
+        ]
+      },
+      "source_faces_order": {
+        "name": "source_faces_order",
+        "type": "ENUM: [LEFT-RIGHT",
+        "required": false,
+        "description": "Порядок исходных лиц",
+        "default": "large-small",
+        "options": [
+          "left-right",
+          "right-left",
+          "top-bottom",
+          "bottom-top",
+          "small-large",
+          "large-small"
+        ]
+      },
+      "source_faces_index": {
+        "name": "source_faces_index",
+        "type": "STRING",
+        "required": false,
+        "description": "Индексы",
+        "default": "\"0\""
+      },
+      "detect_gender_source": {
+        "name": "detect_gender_source",
+        "type": "ENUM: [NO",
+        "required": false,
+        "description": "Пол",
+        "default": "no",
+        "options": [
+          "no",
+          "female",
+          "male"
+        ]
+      },
+      "console_log_level": {
+        "name": "console_log_level",
+        "type": "INT",
+        "required": false,
+        "description": "Уровень логов",
+        "default": "1"
+      }
+    },
+    "outputs_documented": {
+      "OPTIONS": {
+        "name": "OPTIONS",
+        "type": "OPTIONS",
+        "required": false,
+        "description": "Настройки"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4663353,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ReActorFaceBoost": {
+    "node_class": "ReActorFaceBoost",
+    "display_name": "ReActorFaceBoost",
+    "category": "ReActor",
+    "purpose": "Улучшение качества лиц (boost)",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "enabled": {
+        "name": "enabled",
+        "type": "BOOLEAN",
+        "required": false,
+        "description": "Включить",
+        "default": "True"
+      },
+      "boost_model": {
+        "name": "boost_model",
+        "type": "ENUM",
+        "required": false,
+        "description": "Модель улучшения"
+      },
+      "interpolation": {
+        "name": "interpolation",
+        "type": "ENUM: [NEAREST",
+        "required": false,
+        "description": "Интерполяция",
+        "default": "Bicubic",
+        "options": [
+          "Nearest",
+          "Bilinear",
+          "Bicubic",
+          "Lanczos"
+        ]
+      },
+      "visibility": {
+        "name": "visibility",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Видимость",
+        "default": "1"
+      },
+      "codeformer_weight": {
+        "name": "codeformer_weight",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Вес CodeFormer",
+        "default": "0.5"
+      },
+      "restore_with_main_after": {
+        "name": "restore_with_main_after",
+        "type": "BOOLEAN",
+        "required": false,
+        "description": "Восстановление после main",
+        "default": "False"
+      }
+    },
+    "outputs_documented": {
+      "FACE_BOOST": {
+        "name": "FACE_BOOST",
+        "type": "FACE_BOOST",
+        "required": false,
+        "description": "Boost модель"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4664578,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ReActorUnload": {
+    "node_class": "ReActorUnload",
+    "display_name": "ReActorUnload",
+    "category": "ReActor",
+    "purpose": "Выгрузка моделей из памяти",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "trigger": {
+        "name": "trigger",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Триггер (любое изображение)"
+      }
+    },
+    "outputs_documented": {
+      "IMAGE": {
+        "name": "IMAGE",
+        "type": "IMAGE",
+        "required": false,
+        "description": "То же изображение (для continuation)"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4665048,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ReActorFaceSimilarity": {
+    "node_class": "ReActorFaceSimilarity",
+    "display_name": "ReActorFaceSimilarity",
+    "category": "ReActor",
+    "purpose": "Сравнение схожести лиц",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "image1": {
+        "name": "image1",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Первое изображение"
+      },
+      "image2": {
+        "name": "image2",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Второе изображение"
+      }
+    },
+    "outputs_documented": {
+      "FLOAT": {
+        "name": "FLOAT",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Схожесть (0-1)"
+      },
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Текстовое описание схожести"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4665787,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ImageDublicator": {
+    "node_class": "ImageDublicator",
+    "display_name": "ImageDublicator",
+    "category": "ReActor",
+    "purpose": "Дублирование изображений (batch)",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      }
+    },
+    "outputs_documented": {
+      "IMAGE": {
+        "name": "IMAGE",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4666245,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ImageRGBA2RGB": {
+    "node_class": "ImageRGBA2RGB",
+    "display_name": "ImageRGBA2RGB",
+    "category": "ReActor",
+    "purpose": "Конвертация RGBA → RGB",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "RGBA изображение"
+      }
+    },
+    "outputs_documented": {
+      "IMAGE": {
+        "name": "IMAGE",
+        "type": "IMAGE",
+        "required": false,
+        "description": "RGB изображение"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.466668,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "MakeFaceModelBatch": {
+    "node_class": "MakeFaceModelBatch",
+    "display_name": "MakeFaceModelBatch",
+    "category": "ReActor",
+    "purpose": "Создание batch модели лиц",
+    "python_module": "custom_nodes.comfyui-reactor",
+    "inputs_documented": {
+      "images": {
+        "name": "images",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Batch изображений с лицами"
+      }
+    },
+    "outputs_documented": {
+      "FACE_MODEL": {
+        "name": "FACE_MODEL",
+        "type": "FACE_MODEL",
+        "required": false,
+        "description": "Модель лица"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/ReActor.md",
+    "ingested_at": 1788719507.4667125,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "openrouter_node": {
+    "node_class": "openrouter_node",
+    "display_name": "openrouter_node",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/OpenRouterNode.md",
+    "ingested_at": 1788720172.666618,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "OpenRouterNode": {
+    "node_class": "OpenRouterNode",
+    "display_name": "OpenRouterNode",
+    "category": "LLM",
+    "purpose": "Логирование/отладка workflow (placeholder node)",
+    "python_module": "custom_nodes.openrouter_node",
+    "inputs_documented": {
+      "value": {
+        "name": "value",
+        "type": "STRING",
+        "required": false,
+        "description": "Входное значение"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Строка"
+      },
+      "IMAGE": {
+        "name": "IMAGE",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображение"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [
+      "OpenRouter LLM nodes"
+    ],
+    "source_file": "docs/node_docs/OpenRouterNode.md",
+    "ingested_at": 1788720172.667402,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "qwen3vl_api": {
+    "node_class": "qwen3vl_api",
+    "display_name": "qwen3vl_api",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6757288,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWEN_APIKey": {
+    "node_class": "QWEN_APIKey",
+    "display_name": "QWEN_APIKey",
+    "category": "QWEN3VL_API",
+    "purpose": "Установка API ключа для Qwen",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "api_key": {
+        "name": "api_key",
+        "type": "STRING",
+        "required": false,
+        "description": "API ключ"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Статус"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6758637,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWEN3VL_Image": {
+    "node_class": "QWEN3VL_Image",
+    "display_name": "QWEN3VL_Image",
+    "category": "QWEN3VL_API",
+    "purpose": "Анализ изображения через Qwen3-VL",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "image": {
+        "name": "image",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Входное изображение"
+      },
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Запрос к модели"
+      },
+      "api_key": {
+        "name": "api_key",
+        "type": "STRING",
+        "required": false,
+        "description": "API ключ"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ модели"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6760113,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWEN3VL_Video": {
+    "node_class": "QWEN3VL_Video",
+    "display_name": "QWEN3VL_Video",
+    "category": "QWEN3VL_API",
+    "purpose": "Анализ видео через Qwen3-VL",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "video": {
+        "name": "video",
+        "type": "VIDEO",
+        "required": false,
+        "description": "Входное видео"
+      },
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Запрос к модели"
+      },
+      "api_key": {
+        "name": "api_key",
+        "type": "STRING",
+        "required": false,
+        "description": "API ключ"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ модели"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6761456,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWEN3_Text": {
+    "node_class": "QWEN3_Text",
+    "display_name": "QWEN3_Text",
+    "category": "QWEN3VL_API",
+    "purpose": "Генерация текста через Qwen3",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт"
+      },
+      "api_key": {
+        "name": "api_key",
+        "type": "STRING",
+        "required": false,
+        "description": "API ключ"
+      },
+      "max_tokens": {
+        "name": "max_tokens",
+        "type": "INT",
+        "required": false,
+        "description": "Максимальная длина ответа",
+        "default": "512"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Дополнительная информация"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6762936,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWEN_TextProcess": {
+    "node_class": "QWEN_TextProcess",
+    "display_name": "QWEN_TextProcess",
+    "category": "QWEN3VL_API",
+    "purpose": "Обработка текста (подсчет токенов и т.д.)",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Входной текст"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Обработанный текст"
+      },
+      "INT": {
+        "name": "INT",
+        "type": "INT",
+        "required": false,
+        "description": "Количество токенов"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6763976,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "QWEN_TextOperation": {
+    "node_class": "QWEN_TextOperation",
+    "display_name": "QWEN_TextOperation",
+    "category": "QWEN3VL_API",
+    "purpose": "Операции с текстом (конкатенация, замена)",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "text1": {
+        "name": "text1",
+        "type": "STRING",
+        "required": false,
+        "description": "Первый текст"
+      },
+      "text2": {
+        "name": "text2",
+        "type": "STRING",
+        "required": false,
+        "description": "Второй текст"
+      },
+      "operation": {
+        "name": "operation",
+        "type": "ENUM: [CONCAT",
+        "required": false,
+        "description": "Операция",
+        "options": [
+          "concat",
+          "replace"
+        ]
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Результат"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6765354,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "LoadImageFromFolder": {
+    "node_class": "LoadImageFromFolder",
+    "display_name": "LoadImageFromFolder",
+    "category": "QWEN3VL_API",
+    "purpose": "Загрузка изображений из папки",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "folder_path": {
+        "name": "folder_path",
+        "type": "STRING",
+        "required": false,
+        "description": "Путь к папке"
+      },
+      "file_name": {
+        "name": "file_name",
+        "type": "STRING",
+        "required": false,
+        "description": "Имя файла"
+      }
+    },
+    "outputs_documented": {
+      "IMAGE": {
+        "name": "IMAGE",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Загруженное изображение"
+      },
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Путь к файлу"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6766741,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "LoadVideoFromFolder": {
+    "node_class": "LoadVideoFromFolder",
+    "display_name": "LoadVideoFromFolder",
+    "category": "QWEN3VL_API",
+    "purpose": "Загрузка видео из папки",
+    "python_module": "custom_nodes.qwen3vl_api",
+    "inputs_documented": {
+      "folder_path": {
+        "name": "folder_path",
+        "type": "STRING",
+        "required": false,
+        "description": "Путь к папке"
+      },
+      "file_name": {
+        "name": "file_name",
+        "type": "STRING",
+        "required": false,
+        "description": "Имя файла"
+      }
+    },
+    "outputs_documented": {
+      "VIDEO": {
+        "name": "VIDEO",
+        "type": "VIDEO",
+        "required": false,
+        "description": "Загруженное видео"
+      },
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Путь к файлу"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Qwen3VL.md",
+    "ingested_at": 1788720172.6768174,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "pollinations-byop": {
+    "node_class": "pollinations-byop",
+    "display_name": "pollinations-byop",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Pollinations.md",
+    "ingested_at": 1788720172.6894433,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "PollinationsImageGen": {
+    "node_class": "PollinationsImageGen",
+    "display_name": "PollinationsImageGen",
+    "category": "Pollinations/Image",
+    "purpose": "Генерация изображений через Pollinations AI",
+    "python_module": "custom_nodes.pollinations-byop",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт для генерации"
+      },
+      "width": {
+        "name": "width",
+        "type": "INT",
+        "required": false,
+        "description": "Ширина",
+        "default": "1024"
+      },
+      "height": {
+        "name": "height",
+        "type": "INT",
+        "required": false,
+        "description": "Высота",
+        "default": "1024"
+      },
+      "seed": {
+        "name": "seed",
+        "type": "INT",
+        "required": false,
+        "description": "Сид",
+        "default": "0"
+      },
+      "model": {
+        "name": "model",
+        "type": "ENUM: [FLUX",
+        "required": false,
+        "description": "Модель",
+        "default": "flux",
+        "options": [
+          "flux",
+          "stable-diffusion-xl",
+          "..."
+        ]
+      }
+    },
+    "outputs_documented": {
+      "IMAGE": {
+        "name": "IMAGE",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Сгенерированное изображение"
+      },
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Промпт (для сохранения)"
+      }
+    },
+    "configuration": {
+      "API key": "Не требуется (бесплатный API)",
+      "Rate limit": "~10 requests/min"
+    },
+    "examples": [],
+    "related_nodes": [
+      "PollinationsTextGen",
+      "PollinationsAudioGen"
+    ],
+    "source_file": "docs/node_docs/Pollinations.md",
+    "ingested_at": 1788720172.6896198,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "PollinationsTextGen": {
+    "node_class": "PollinationsTextGen",
+    "display_name": "PollinationsTextGen",
+    "category": "Pollinations/Text",
+    "purpose": "Генерация текста через Pollinations AI",
+    "python_module": "custom_nodes.pollinations-byop",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт"
+      },
+      "model": {
+        "name": "model",
+        "type": "ENUM: [OPENAI-GPT-4O",
+        "required": false,
+        "description": "Модель",
+        "default": "openai-gpt-4o",
+        "options": [
+          "openai-gpt-4o",
+          "meta-llama/llama-3.3-70b-instruct",
+          "..."
+        ]
+      },
+      "max_tokens": {
+        "name": "max_tokens",
+        "type": "INT",
+        "required": false,
+        "description": "Максимальная длина",
+        "default": "1024"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Сгенерированный текст"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Pollinations.md",
+    "ingested_at": 1788720172.6897082,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "PollinationsAudioGen": {
+    "node_class": "PollinationsAudioGen",
+    "display_name": "PollinationsAudioGen",
+    "category": "Pollinations/Audio",
+    "purpose": "Генерация аудио через Pollinations AI",
+    "python_module": "custom_nodes.pollinations-byop",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт"
+      },
+      "model": {
+        "name": "model",
+        "type": "ENUM: [STABLE-AUDIO-OPEN-1.0",
+        "required": false,
+        "description": "Модель",
+        "default": "stable-audio-open-1.0",
+        "options": [
+          "stable-audio-open-1.0",
+          "musicgen-large",
+          "..."
+        ]
+      },
+      "duration": {
+        "name": "duration",
+        "type": "FLOAT",
+        "required": false,
+        "description": "Длительность в секундах",
+        "default": "10"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "URL аудио файла"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Pollinations.md",
+    "ingested_at": 1788720172.6897917,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "PollinationsVideoGen": {
+    "node_class": "PollinationsVideoGen",
+    "display_name": "PollinationsVideoGen",
+    "category": "Pollinations/Video",
+    "purpose": "Генерация видео через Pollinations AI",
+    "python_module": "custom_nodes.pollinations-byop",
+    "inputs_documented": {
+      "prompt": {
+        "name": "prompt",
+        "type": "STRING",
+        "required": false,
+        "description": "Текст-промпт"
+      },
+      "duration": {
+        "name": "duration",
+        "type": "INT",
+        "required": false,
+        "description": "Длительность в секундах",
+        "default": "4"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "URL видео файла"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Pollinations.md",
+    "ingested_at": 1788720172.689853,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "PollinationsBYOPLogin": {
+    "node_class": "PollinationsBYOPLogin",
+    "display_name": "PollinationsBYOPLogin",
+    "category": "Pollinations/BYOP",
+    "purpose": "Аутентификация для BYOP (Bring Your Own Provider)",
+    "python_module": "custom_nodes.pollinations-byop",
+    "inputs_documented": {
+      "api_key": {
+        "name": "api_key",
+        "type": "STRING",
+        "required": false,
+        "description": "API ключ Pollinations"
+      },
+      "provider": {
+        "name": "provider",
+        "type": "STRING",
+        "required": false,
+        "description": "Название провайдера"
+      },
+      "endpoint": {
+        "name": "endpoint",
+        "type": "STRING",
+        "required": false,
+        "description": "URL endpoint"
+      }
+    },
+    "outputs_documented": {
+      "STRING": {
+        "name": "STRING",
+        "type": "STRING",
+        "required": false,
+        "description": "Email"
+      },
+      "INT": {
+        "name": "INT",
+        "type": "INT",
+        "required": false,
+        "description": "Credits remaining"
+      }
+    },
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/Pollinations.md",
+    "ingested_at": 1788720172.6899652,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "ComfyUI-Agent-Panel": {
+    "node_class": "ComfyUI-Agent-Panel",
+    "display_name": "ComfyUI-Agent-Panel",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/AgentPanel.md",
+    "ingested_at": 1788720172.699255,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "AgentPanel": {
+    "node_class": "AgentPanel",
+    "display_name": "AgentPanel",
+    "category": "Agent/Panel",
+    "purpose": "Веб-панель для управления агентом",
+    "python_module": "custom_nodes.comfyui-agent-panel",
+    "inputs_documented": {
+      "task": {
+        "name": "task",
+        "type": "STRING",
+        "required": false,
+        "description": "Задача для выполнения"
+      },
+      "model": {
+        "name": "model",
+        "type": "STRING",
+        "required": false,
+        "description": "Модель для использования"
+      }
+    },
+    "outputs_documented": {
+      "result": {
+        "name": "result",
+        "type": "STRING",
+        "required": false,
+        "description": "Результат выполнения"
+      },
+      "status": {
+        "name": "status",
+        "type": "STRING",
+        "required": false,
+        "description": "Статус (pending/completed/failed)"
+      }
+    },
+    "configuration": {
+      "Panel доступен по адресу": "http://127.0.0.1:8188/agent-panel"
+    },
+    "examples": [],
+    "related_nodes": [
+      "Agent tasks"
+    ],
+    "source_file": "docs/node_docs/AgentPanel.md",
+    "ingested_at": 1788720172.6993806,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "comfyui-openai-compatible": {
+    "node_class": "comfyui-openai-compatible",
+    "display_name": "comfyui-openai-compatible",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/OpenAICompatible.md",
+    "ingested_at": 1788721151.2421114,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "OpenAICompatibleChat": {
+    "node_class": "OpenAICompatibleChat",
+    "display_name": "OpenAICompatibleChat",
+    "category": "api/text",
+    "purpose": "Чат с LLM через OpenAI-compatible API",
+    "python_module": "custom_nodes.comfyui-openai-compatible",
+    "inputs_documented": {
+      "base_url": {
+        "name": "base_url",
+        "type": "STRING",
+        "required": false,
+        "description": "URL endpoint",
+        "default": "https://api.openai.com/v1"
+      },
+      "api_key": {
+        "name": "api_key",
+        "type": "STRING",
+        "required": false,
+        "description": "API ключ (или env OPENAI_COMPATIBLE_API_KEY)"
+      },
+      "model": {
+        "name": "model",
+        "type": "STRING",
+        "required": false,
+        "description": "Модель для использования",
+        "default": "gpt-4o"
+      },
+      "text_1": {
+        "name": "text_1",
+        "type": "STRING",
+        "required": false,
+        "description": "Первый текстовый ввод"
+      },
+      "text_2": {
+        "name": "text_2",
+        "type": "STRING",
+        "required": false,
+        "description": "Второй текстовый ввод"
+      },
+      "text_3": {
+        "name": "text_3",
+        "type": "STRING",
+        "required": false,
+        "description": "Третий текстовый ввод"
+      }
+    },
+    "outputs_documented": {
+      "text": {
+        "name": "text",
+        "type": "STRING",
+        "required": false,
+        "description": "Ответ модели"
+      }
+    },
+    "configuration": {
+      "API key": "можно задать через env переменные",
+      "Models": "автозагрузка через /models endpoint",
+      "Max inputs": "16 текстовых входов"
+    },
+    "examples": [],
+    "related_nodes": [
+      "OpenAI API",
+      "OpenRouter",
+      "Groq",
+      "LM Studio",
+      "Ollama"
+    ],
+    "source_file": "docs/node_docs/OpenAICompatible.md",
+    "ingested_at": 1788721151.2430606,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "websocket_image_save": {
+    "node_class": "websocket_image_save",
+    "display_name": "websocket_image_save",
+    "category": "",
+    "purpose": "",
+    "python_module": "",
+    "inputs_documented": {},
+    "outputs_documented": {},
+    "configuration": {},
+    "examples": [],
+    "related_nodes": [],
+    "source_file": "docs/node_docs/WebSocketImageSave.md",
+    "ingested_at": 1788721855.240096,
+    "version": "1.0",
+    "comfyui_version": ""
+  },
+  "SaveImageWebsocket": {
+    "node_class": "SaveImageWebsocket",
+    "display_name": "SaveImageWebsocket",
+    "category": "image",
+    "purpose": "Сохранение изображений через WebSocket (без метаданных)",
+    "python_module": "custom_nodes.websocket_image_save",
+    "inputs_documented": {
+      "images": {
+        "name": "images",
+        "type": "IMAGE",
+        "required": false,
+        "description": "Изображения для сохранения"
+      }
+    },
+    "outputs_documented": {},
+    "configuration": {
+      "Формат": "PNG",
+      "Метод": "WebSocket binary transfer",
+      "Metadata": "Не сохраняется"
+    },
+    "examples": [],
+    "related_nodes": [
+      "SaveImage",
+      "SaveImageAdvanced"
+    ],
+    "source_file": "docs/node_docs/WebSocketImageSave.md",
+    "ingested_at": 1788721855.2415786,
+    "version": "1.0",
+    "comfyui_version": ""
+  }
+}

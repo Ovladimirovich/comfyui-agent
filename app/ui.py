@@ -85,6 +85,7 @@ class ComfyUIServer:
         agent: Optional[ConversationAgent] = None,
         provider=None,
         prompt_builder=None,  # M12: CompositePromptBuilder (default) or custom
+        knowledge_core=None,  # AD-48: KnowledgeCore (wired из build_server)
     ) -> None:
         self.store = store
         # M17/M24.1: feedback store — используем существующий у агента или создаём новый
@@ -100,6 +101,9 @@ class ComfyUIServer:
         self.agent.feedback_store = self.feedback_store
         # M25: guarantee agent.experience_store == self.experience_store
         self.agent.experience_store = self.experience_store
+        # AD-48: knowledge_core — единый источник knowledge для read-only endpoints
+        # (приоритет явному аргументу; fallback на agent.knowledge_core для тестов)
+        self.knowledge_core = knowledge_core or getattr(agent, "knowledge_core", None)
         self.provider = provider
         # M12: default to CompositePromptBuilder (LLM fallback to heuristic)
         if prompt_builder is None:
@@ -474,6 +478,48 @@ fetch('/api/session?session_id=' + encodeURIComponent(sid))
 """
 
 
+def _node_brief(schema) -> dict:
+    """Краткая сводка ноды для read-only API (AD-48). Работает и с NodeSchema,
+    и с NodeFacts (у обоих есть class_type/display_name/category; выходные типы
+    называются output_types у NodeSchema и outputs у NodeFacts)."""
+    output_types = getattr(schema, "outputs", None) or getattr(schema, "output_types", ())
+    return {
+        "class_type": schema.class_type,
+        "display_name": schema.display_name,
+        "category": schema.category,
+        "output_types": list(output_types),
+    }
+
+
+def knowledge_node_search(core, q: str, limit: int = 50) -> list[dict]:
+    """Поиск нод по подстроке в class_type/display_name/category (read-only, S3)."""
+    q_lower = q.lower().strip()
+    if not q_lower:
+        return []
+    schemas = core.get_schemas()
+    matched = [
+        s for s in schemas.values()
+        if q_lower in (s.class_type or "").lower()
+        or q_lower in (s.display_name or "").lower()
+        or q_lower in (s.category or "").lower()
+    ]
+    matched.sort(key=lambda s: s.class_type)
+    return [_node_brief(s) for s in matched[:limit]]
+
+
+def _package_facts_to_dict(pkg) -> dict:
+    """Сериализация PackageFacts (frozen dataclass без собственного to_dict)."""
+    return {
+        "package_id": pkg.package_id,
+        "classes": list(pkg.classes),
+        "is_custom": pkg.is_custom,
+        "api_family": pkg.api_family,
+        "safety_profile": pkg.safety_profile,
+        "doc_coverage": pkg.doc_coverage,
+        "provenance": pkg.provenance,
+    }
+
+
 def _make_handler(factory: ComfyUIServer):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # тихий лог
@@ -504,6 +550,10 @@ def _make_handler(factory: ComfyUIServer):
             elif path == "/api/feedback/history":
                 sid = self._qs().get("session_id", [""])[0]
                 self._send_json(factory.get_feedback_history(sid))
+            elif path == "/api/nodes":
+                self._handle_api_nodes()
+            elif path == "/api/knowledge":
+                self._handle_api_knowledge()
             elif path.startswith("/asset/"):
                 self._handle_asset(path[len("/asset/"):])
             else:
@@ -597,6 +647,9 @@ def _make_handler(factory: ComfyUIServer):
                 return
             if parsed.path == "/api/assets":
                 self._handle_assets_upload()
+                return
+            if parsed.path == "/api/self-test":
+                self._handle_api_self_test()
                 return
             if parsed.path == "/api/chat":
                 self._handle_chat()
@@ -708,11 +761,167 @@ def _make_handler(factory: ComfyUIServer):
             result = factory.record_feedback(session_id, attempt_id, rating, comment)
             self._send_json(result)
 
+        # ======================================================================
+        # AD-48: read-only knowledge endpoints (S3/S6 → UI)
+        # ======================================================================
+
+        def _handle_api_nodes(self) -> None:
+            """GET /api/nodes — поиск нод в KnowledgeCore (read-only, S3).
+
+            Query params (все optional):
+              node=<class_type>     — точный ответ по одной ноде (find_node)
+              q=<substring>         — подстрока в class_type/display_name
+              output=<TYPE>         — nodes_by_io(output_type=TYPE)
+              package=<id>          — find_package (custom nodes)
+            Без параметров — сводная статистика (stats).
+            """
+            core = getattr(factory, "knowledge_core", None)
+            if core is None:
+                self._send_json({"error": "knowledge not configured"}, code=503)
+                return
+            qs = self._qs()
+
+            node = qs.get("node", [""])[0].strip()
+            q = qs.get("q", [""])[0].strip()
+            output_type = qs.get("output", [""])[0].strip().upper()
+            package = qs.get("package", [""])[0].strip()
+
+            try:
+                if node:
+                    facts = core.find_node(node)
+                    if facts is None:
+                        self._send_json({"error": f"node not found: {node}"}, code=404)
+                        return
+                    self._send_json({"node": facts.to_dict()})
+                    return
+
+                if package:
+                    pkg = core.find_package(package)
+                    if pkg is None:
+                        self._send_json({"error": f"package not found: {package}"}, code=404)
+                        return
+                    self._send_json({"package": _package_facts_to_dict(pkg)})
+                    return
+
+                if q:
+                    matches = knowledge_node_search(core, q)
+                    self._send_json({"query": q, "count": len(matches), "nodes": matches})
+                    return
+
+                if output_type:
+                    schemas = core.nodes_by_io(output_type=output_type)
+                    matches = [
+                        _node_brief(s) for s in schemas
+                    ]
+                    self._send_json({"output_type": output_type, "count": len(matches), "nodes": matches})
+                    return
+
+                # default: stats
+                schemas = core.get_schemas()
+                self._send_json({
+                    "configured": True,
+                    "stats": {
+                        "schemas": len(schemas),
+                        "candidates": len(core.get_candidates()),
+                        "validated_nodes": len(core.get_validated_nodes()),
+                    },
+                })
+            except Exception as exc:  # не ломать HTTP-слой из-за knowledge-ошибки
+                self._send_json({"error": "knowledge query failed", "detail": str(exc)}, code=500)
+
+        def _handle_api_knowledge(self) -> None:
+            """GET /api/knowledge — explain_node / gap_report (read-only, S3).
+
+            Query params:
+              node=<class_type>     — подробное объяснение ноды (explain_node)
+              gap=1                 — gap_report (чего не хватает до исполняемости)
+            Без параметров — сводная статистика.
+            """
+            core = getattr(factory, "knowledge_core", None)
+            if core is None:
+                self._send_json({"error": "knowledge not configured"}, code=503)
+                return
+            qs = self._qs()
+
+            node = qs.get("node", [""])[0].strip()
+            want_gap = qs.get("gap", ["0"])[0].strip() in ("1", "true", "yes")
+
+            try:
+                if node:
+                    explanation = core.explain_node(node)
+                    if explanation is None:
+                        self._send_json({"error": f"node not found: {node}"}, code=404)
+                        return
+                    self._send_json({"node": explanation.to_dict()})
+                    return
+
+                if want_gap:
+                    gaps = [g.to_dict() for g in core.gap_report()]
+                    self._send_json({"gaps": gaps, "count": len(gaps)})
+                    return
+
+                schemas = core.get_schemas()
+                self._send_json({
+                    "configured": True,
+                    "stats": {
+                        "schemas": len(schemas),
+                        "candidates": len(core.get_candidates()),
+                        "claims": len(core.get_claims()),
+                        "confirmed_claims": len(core.get_confirmed_claims()),
+                        "validated_nodes": len(core.get_validated_nodes()),
+                    },
+                })
+            except Exception as exc:
+                self._send_json({"error": "knowledge query failed", "detail": str(exc)}, code=500)
+
+        def _handle_api_self_test(self):
+            """POST /api/self-test — S6 self-test одной ноды (детерминированный gate).
+
+            Body: {"node_class": str, "backend_id": str?, "base_url": str?}
+            Делегирует в Agent.run_self_test (AD-47 консервативный gate).
+            """
+            body = self._read_json_body()
+            if body is None or not isinstance(body, dict):
+                self._send_json({"error": "bad json"}, code=400)
+                return
+            node_class = (body.get("node_class") or "").strip()
+            if not node_class:
+                self._send_json({"error": "node_class required"}, code=400)
+                return
+            backend_id = body.get("backend_id")
+            base_url = body.get("base_url")
+            try:
+                result = factory.agent.run_self_test(
+                    node_class,
+                    backend_id=backend_id,
+                    base_url=base_url,
+                )
+                self._send_json(result)
+            except Exception as exc:
+                self._send_json({"error": "self-test failed", "detail": str(exc)}, code=500)
+
     return Handler
 
 
-def build_server(host: str = "127.0.0.1", port: int = 0, store: Optional[AssetStore] = None):
-    """Создать ThreadingHTTPServer для M9 (store из env или data/assets)."""
+def build_server(
+    host: str = "127.0.0.1",
+    port: int = 0,
+    store: Optional[AssetStore] = None,
+    knowledge_data_dir: Optional[str] = None,
+):
+    """Создать ThreadingHTTPServer для M9 (store из env или data/assets).
+
+    AD-48: production-композиция — единственный composition root. Wiring:
+      - KnowledgeCore строится из persistent snapshot (app/data/knowledge);
+      - RuntimeValidator получает реальный transport (ComfyClient к default backend);
+      - всё передаётся в ConversationAgent(knowledge_core=...).
+    Fail-open (AD-45): если knowledge недоступен (load error) — сервер стартует
+    как раньше, knowledge_core=None, без блокировки.
+
+    knowledge_data_dir — seam для самодостаточных тестов: необязательный путь к
+    snapshot'у knowledge. None (дефолт) = runtime-путь app/data/knowledge; production
+    НЕ получает синтетические данные автоматически.
+    """
     import os
 
     from app.registry.backends import BackendCatalog
@@ -722,16 +931,58 @@ def build_server(host: str = "127.0.0.1", port: int = 0, store: Optional[AssetSt
         store = AssetStore(root=root)
     fb_store = FeedbackStore()
     exp_store = ExperienceStore()
+    backends = backends_from_env()
+    knowledge_core = _build_knowledge_core(backends=backends, data_dir=knowledge_data_dir)
     agent = ConversationAgent(
         store,
-        backends=BackendCatalog.from_env(),
+        backends=backends,
         feedback_store=fb_store,
         experience_store=exp_store,
+        knowledge_core=knowledge_core,  # AD-48 wiring
     )
-    factory = ComfyUIServer(store, agent=agent)
+    factory = ComfyUIServer(store, agent=agent, knowledge_core=knowledge_core)
     handler = _make_handler(factory)
     httpd = ThreadingHTTPServer((host, port), handler)
     return httpd, factory
+
+
+def backends_from_env():
+    """BackendCatalog из env (инкапсуляция; один источник для server wiring).
+
+    Вынесено отдельно, чтобы build_server и wiring knowledge использовали один
+    и тот же список backend'ов (AD-48) — default backend задаёт transport.
+    """
+    from app.registry.backends import BackendCatalog
+
+    return BackendCatalog.from_env()
+
+
+def _build_knowledge_core(backends=None, data_dir: Optional[str] = None):
+    """AD-48: построить KnowledgeCore с RuntimeValidator (реальный transport).
+
+    Args:
+        backends: BackendCatalog — первый backend задаёт transport;
+        data_dir: необязательный путь к snapshot'у knowledge. None (дефолт) —
+            runtime-путь app/data/knowledge: production использует только
+            реальный snapshot и НЕ получает синтетические данные. Параметр —
+            исключительно seam для самодостаточных тестов.
+
+    Возвращает KnowledgeCore или None при ошибке (fail-open, AD-45). Self-test
+    (S6) использует тот же RuntimeValidator → консервативный gate (AD-47).
+    """
+    try:
+        from app.comfy.client import ComfyClient
+        from app.knowledge.core import KnowledgeCore
+        from app.knowledge.runtime_validator import RuntimeValidator
+
+        base_url = None
+        if backends is not None and backends.backends:
+            base_url = backends.backends[0].base_url
+        validator = RuntimeValidator(comfy_client=ComfyClient(base_url=base_url))
+        return KnowledgeCore(runtime_validator=validator, data_dir=data_dir)
+    except Exception:
+        # fail-open: knowledge отсутствие != capability absence (AD-45)
+        return None
 
 
 def main() -> None:

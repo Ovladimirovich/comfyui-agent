@@ -1,0 +1,3 @@
+{"attempt_id": "78d050b8-45bf-4080-bfc4-7d3ba69b3b3b", "session_id": "m241_learning_e2e", "rating": 1, "comment": "E2E test: low rating", "timestamp": 1788510650.10569}
+{"attempt_id": "negative_control_test", "session_id": "m241_learning_e2e", "rating": 5, "comment": "E2E test: high rating", "timestamp": 1788510770.9977963}
+{"attempt_id": "medium_control_test", "session_id": "m241_learning_e2e", "rating": 3, "comment": "", "timestamp": 1788510771.0066483}

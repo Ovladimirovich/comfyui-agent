@@ -1,0 +1,36 @@
+[
+  {
+    "claim": "TestNode executed successfully",
+    "subject": "TestNode",
+    "predicate": "validated_by_execution",
+    "object": "true",
+    "status": "CONFIRMED",
+    "evidence": [
+      {
+        "source": "runtime",
+        "source_type": "runtime",
+        "trust_level": "observed",
+        "timestamp": 1788721943.4220943,
+        "claim": "TestNode executed successfully"
+      }
+    ],
+    "last_verified": 1788721943.4220943
+  },
+  {
+    "claim": "Workflow pollinations_image executed successfully",
+    "subject": "pollinations_image",
+    "predicate": "executed_successfully",
+    "object": "SUCCESS",
+    "status": "CONFIRMED",
+    "evidence": [
+      {
+        "source": "runtime",
+        "source_type": "runtime",
+        "trust_level": "observed",
+        "timestamp": 1788732938.5825312,
+        "claim": "Workflow pollinations_image produced 1 assets"
+      }
+    ],
+    "last_verified": 0.0
+  }
+]

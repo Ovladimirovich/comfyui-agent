@@ -3,6 +3,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+# test_m11_verification.py — это ручной verification-скрипт (запуск: python tests/test_m11_verification.py),
+# НЕ pytest-тест: исполняет код верхнего уровня при import и требует живого registry/ComfyUI.
+# Исключаем из pytest-сбора, чтобы collection не падал (HANDOFF 2026-09-14, pre-existing failure).
+collect_ignore_glob = ["tests/test_m11_verification.py"]
+
 # Force pytest tmpdir to a writable location (DSH sandbox may block default temp)
 import pytest
 

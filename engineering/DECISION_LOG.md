@@ -220,4 +220,20 @@ Status: PROPOSED | APPROVED
 - **Affected components:** `app/agent.py`, `app/conversation.py`, `app/engine/job.py` (S0.5); `app/registry/cost.py` (new), `app/registry/backends.py`, `app/registry/workflow.py` (S1); `app/synthesis/` (new, S2), `app/knowledge/core.py` (+synthesize_candidates, advisory). Frozen M25/M26 контракты не затронуты.
 - **Tech debt (осознанно принята):** `_select_manifest()` без аргумента `backend` пропускает cost-filter (backward-compat прямых вызовов; production path через `prepare()` backend передаёт). Если `_select_manifest` станет публичным — закрыть отдельно.
 - **Author/Agent:** OpenCode (implementation) / автор проекта (approval каждого слоя)
+
+
+## 2026-09-14 - AD-48 (Knowledge Wiring в production-агента + read-only UI endpoints)
+
+- **Decision ID:** AD-48
+- **Context:** Audit (2026-09-14) показал: `KnowledgeCore` (S0.5/S3, 1040 схем в `node_schemas.json`) и `RuntimeValidator` (S6) написаны и покрыты тестами, но НЕ подключены в production-композицию. `build_server()` (app/ui.py) создаёт `ConversationAgent(store, backends, feedback_store, experience_store)` — без `knowledge_core`. Эндпоинты §21 (`/api/capabilities`, `/api/workflows`, `/api/runtime`, `/api/jobs/{id}`) реализованы только частично: `POST /api/chat` существует, остальные отсутствуют → 4 теста в `tests/test_ui_section21.py` падают (и падали на HEAD, `EXPLAINED_FAILURES`).
+- **Decision:**
+  - **Wiring (production):** `build_server()` создаёт `KnowledgeCore()` (persistent snapshot `app/data/knowledge`) + `RuntimeValidator(comfy_client=ComfyClient(default_backend.base_url))` (реальный transport) и передаёт в `ConversationAgent(knowledge_core=core)`. Сохранён `fail-open` контракт AD-45: при недоступности knowledge (ошибка load) сервер работает как раньше (`knowledge_core=None`), не блокируя старт.
+  - **Read-only endpoints (S3/S6 → UI):** `GET /api/nodes` (find_node / nodes_by_io / find_package), `GET /api/knowledge` (explain_node / gap_report / stats), `POST /api/self-test` (S6 `run_self_test` через реальный RuntimeValidator, консервативный gate AD-47). Endpoints строго повторяют существующие контракты knowledge-ядра — никакой новой логики в ui.py, только делегирование.
+  - **§21 — DRAFT-статус НЕ меняет PROJECT_SPEC** (контракт остаётся целевым). В `docs/AGENT_UI_IMPLEMENTATION_PLAN.md` фиксируется фактическое состояние: `/api/capabilities`, `/api/workflows`, `/api/runtime`, `/api/jobs/*` НЕ реализованы → соответствующие тесты переведены в честный статус (DRAFT/skip), не удаляются.
+  - **Тесты:** новый `tests/test_knowledge_wiring_ui.py` — проверка wiring + новых read-only эндпоинтов.
+- **Reason:** Composition root (ui.py) — единственное место production-сборки. Knowledge и RuntimeValidator уже протестированы on-island; отсутствие wiring делает их мёртвым кодом относительно UI-взаимодействия. Read-only эндпоинты не меняют execution semantics (AD-45/AD-47), а дают честное отображение knowledge. §21 контракт сохранён как target для последующих фаз.
+- **Affected components:** `app/ui.py` (build_server, ComfyUIServer, Handler), `docs/AGENT_UI_IMPLEMENTATION_PLAN.md` (статус), `engineering/DECISION_LOG.md` (эта запись), `tests/test_ui_section21.py` (4 DRAFT-теста → skip с reason), `tests/test_knowledge_wiring_ui.py` (new).
+- **Tech debt:** `/api/capabilities`, `/api/workflows`, `/api/runtime`, `/api/jobs/*` остаются нереализованными (§21 DRAFT). RuntimeValidator использует default backend (`http://127.0.0.1:8188`); при multi-backend нужно явно выбирать backend для self-test.
+- **Author/Agent:** OpenCode (implementation) / автор проекта (approval scope этапа в диалоге)
+- **Status:** APPROVED (scope одобрен автором)
 - **Status:** APPROVED & FROZEN (S0.5, S1); S2 — ACCEPTED WITH DOCUMENTED RUNTIME GAP (файл-output proof ждёт свободной ComfyUI-очереди; graph принят сервером)

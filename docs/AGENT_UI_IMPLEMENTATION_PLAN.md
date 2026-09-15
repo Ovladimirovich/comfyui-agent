@@ -1,6 +1,6 @@
 # AGENT_UI_IMPLEMENTATION_PLAN.md
 
-> **Статус:** Архитектура APPROVED автором; UI-1 и UI-2 реализованы (см. раздел «Статус реализации»); UI-3..UI-9 — ждут команды.
+> **Статус:** Архитектура APPROVED автором; UI-2 реализован; UI-1 в честном DRAFT-статусе (реализованы только read-only knowledge-эндпоинты из AD-48; целевые §21-эндпоинты `/api/capabilities`, `/api/workflows`, `/api/runtime`, `/api/jobs/*` НЕ реализованы — см. «Статус реализации»); UI-3..UI-9 — ждут команды.
 > **Source of truth:** `docs/AGENT_UI_ARCHITECTURE.md` (проект), `docs/PROJECT_SPEC.md` (source of truth).
 > **Дата:** 2026-09-08
 
@@ -151,7 +151,7 @@ UI-9 E2E validation (реальный Comfy Desktop)
 
 | Фаза | Содержание | Зависит от | DoD (минимальный) |
 |------|-----------|------------|--------------------|
-| **UI-1** | Реализовать B.1 (§21 endpoints) + **базовые** события B.3, не затрагивающие архитектуру (plan/intent на этапе старта уже есть в `start` — можно сначала отдавать их в `start`-событии, без новых типов; retry/decision — добавить если approval) | D-решения по B.3 (если approval) | `GET /api/jobs/{id}`, `/api/capabilities`, `/api/workflows`, `/api/runtime` работают; существующие M9/M12 тесты зелёные; никакие существующие контракты не сломаны |
+| **UI-1** | Реализовать B.1 (§21 endpoints) + **базовые** события B.3, не затрагивающие архитектуру (plan/intent на этапе старта уже есть в `start` — можно сначала отдавать их в `start`-событии, без новых типов; retry/decision — добавить если approval) | D-решения по B.3 (если approval) | **DRAFT (AD-48):** целевые §21-эндпоинты не реализованы; вместо них — read-only `GET /api/nodes`, `GET /api/knowledge`, `POST /api/self-test` + wiring KnowledgeCore (S3/S6). DoD для §21 endpoints: `GET /api/jobs/{id}`, `/api/capabilities`, `/api/workflows`, `/api/runtime` работают; существующие M9/M12 тесты зелёные; никакие существующие контракты не сломаны |
 | **UI-2** | Vite+React shell, роутинг, session management, SSE client, API client | UI-1 | SPA открывается на 127.0.0.1, session_id сохр., SSE-подписка работает |
 | **UI-3** | Чат + вложения | UI-2 | Отправка запроса, отображение сообщений, вложения (через /turn assets) |
 | **UI-4** | Current Task + Plan зоны | UI-3 + события intent/plan (если одобрены — иначе из /api/session) | Отображаются запрос, intent, constraints, plan |
@@ -180,9 +180,10 @@ UI-9 E2E validation (реальный Comfy Desktop)
 - [x] Создан `docs/AGENT_UI_IMPLEMENTATION_PLAN.md` с разбиением A/B/C/D.
 - [x] `AGENTS.md` дополнен правилами Agent UI (13 правил из задачи).
 
-## Статус реализации (после approval автора — UI-1 и UI-2 выполнены)
+## Статус реализации (честный; AD-48 от 2026-09-14 корректирует ложный «выполнен»)
 
-- [x] **UI-1 выполнен:** реализованы §21 endpoints в `app/ui.py` (`POST /api/chat`, `GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel`, `GET /api/capabilities`, `GET /api/workflows`, `GET /api/runtime`). Без новых SSE-событий, без D-решений. Тесты: `tests/test_ui_section21.py` — **8/8 PASSED**.
+- [ ] **UI-1 НЕ завершён (DRAFT):** целевые §21-эндпоинты в `app/ui.py` (`GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel`, `GET /api/capabilities`, `GET /api/workflows`, `GET /api/runtime`) **не реализованы** и отдают 404. Тесты `tests/test_ui_section21.py` фиксировали целевой контракт и падали на HEAD → переведены в честный DRAFT-skip (не удалены, не подогнаны).
+- [x] **AD-48 (2026-09-14):** в production-композицию `build_server()` подключены `KnowledgeCore` + `RuntimeValidator` (реальный transport); добавлены read-only эндпоинты `GET /api/nodes`, `GET /api/knowledge`, `POST /api/self-test`. Тесты: `tests/test_knowledge_wiring_ui.py` — **15/15 PASSED**. Без новых SSE-событий, без D-решений.
 - [x] **UI-2 выполнен:** Vite+React shell `agent_ui/` (session в localStorage, SSE-подписка на существующие события, recovery через `/api/session`, §21 API client). Build: `npm run build` — OK. Тесты чистых функций: `node --test` — **8/8 PASSED**.
 - [x] Ни одно D-решение (D-1..D-9) не принято самостоятельно; новые события/поведение Core не добавлялись.
 - [x] Регресс: существующие M9/M12 тесты — падения идентичны pre-existing (окружение: WS-таймаут к 127.0.0.1:9999 без живого ComfyUI); все без turn-а тесты зелёные.

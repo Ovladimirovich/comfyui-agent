@@ -1,0 +1,38 @@
+[
+  {
+    "test_id": "T2",
+    "test_name": "Workflow construction",
+    "prompt": "Create a workflow for txt2img with SDXL model",
+    "success": true,
+    "elapsed_seconds": 326.21,
+    "return_code": 0,
+    "output_lines": 151,
+    "has_tool_calls": true,
+    "has_final_answer": true,
+    "timestamp": "2026-09-06T19:33:11.015521",
+    "called_tools": [
+      "get_history",
+      "comfy_cli",
+      "list_local_models"
+    ],
+    "expected_tools_match": false
+  },
+  {
+    "test_id": "T4",
+    "test_name": "Node discovery",
+    "prompt": "Find a node for face swap",
+    "success": true,
+    "elapsed_seconds": 233.47,
+    "return_code": 0,
+    "output_lines": 79,
+    "has_tool_calls": true,
+    "has_final_answer": true,
+    "timestamp": "2026-09-06T19:37:04.486626",
+    "called_tools": [
+      "comfy_cli",
+      "get_history",
+      "get_system_stats"
+    ],
+    "expected_tools_match": false
+  }
+]

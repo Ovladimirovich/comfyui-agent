@@ -39,6 +39,12 @@ __tmp_*/
 __e2e_*/
 __tmptest_*/
 _e2e_tmp/
+__test_*/
+__test_finding_a*/
+__tmpx__/
+_sym_*.txt
+_diag.txt
+_bad17.txt
 data/assets/
 data/feedback/
 data/*.jsonl
