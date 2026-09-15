@@ -16,6 +16,15 @@ ARCHITECTURAL DECISIONS
 NEXT RECOMMENDED TASK
 ```
 
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Категория 3: фикстуры AD-18 ✅ ВЫПОЛНЕНО (2026-09-15, план автора из 13 шагов)
+
+- **План выполнен.** `tests/test_planner_context.py`, `tests/test_progress.py`, `tests/test_prompt_builder_integration_m11.py` переписаны на канонические `FakeClient`/`FakeProvider` (шаблон `tests/test_agent.py`); `_patch_runtime` применён к тестам 4,5,6,8,10; тест 11 `test_progress.py` переведён на канонический `_FakeProvider()` (шаг 8).
+- **Root cause (найден при финальной проверке):** `_patch_runtime` подменял `app.agent.discover_runtime` лямбдой БЕЗ аргумента, но `_discover_facts()` вызывает `discover_runtime(client)` → `TypeError` → `except` → `runtime=None` → txt2img (`requirements.fp16=true`, `min_vram_gb=4`) → UNKNOWN → `AgentError: нет workflow с подтверждённой совместимостью` (`app/agent.py:443`). **FIX:** `lambda _client: RuntimeInfo(**_FAKE_RUNTIME_DICT)` в обоих файлах (патч лямбды обязан принимать клиент — сигнатура `def discover_runtime(client)`).
+- **Побочное:** в `test_progress.py` был вставлен текст плана (ломает collection, `IndentationError`) — удалён.
+- **TESTS:** 3 файла → **36 passed, 0 failed** (57s). Полная регрессия `tests/` → **1138 passed, 17 failed, 28 skipped (37:10)**. Все 17 падений — pre-existing/окружение, НЕ от этой задачи: (а) `ComfyClientError: ComfyUI HTTP 400 at /prompt` на живом ComfyUI (M18 ×2, M21 ×2, UI-real ×2, inpaint — реальный ComfyUI отвергает графики на данной машине); (б) `TypeError: PlanContext.__init__() got an unexpected keyword argument 'validated_nodes'` (s4_full/s4_real — устаревший API, известный шаг 2b HANDOFF, не закрыт для живого ComfyUI); (в) M18 chain: fallback `pollinations_image` + upscale UNKNOWN на CPU-env (`fp16=None`).
+- **Production-код НЕ изменён:** `git diff --name-only HEAD -- app/ workflows/` = пусто. Файлы: только 3 тест-файла. Гигиена: `assets.jsonl` — мусор прогонов (`AssetStore._jsonl = root.parent/assets.jsonl` для относительных root) — возвращён из HEAD, в коммит НЕ входит.
+- **Session boundary:** категория 3 закрыта → `START NEW SESSION`: шаг 2b (синхронизировать s4_full/s4_real PlanContext при живом ComfyUI) или решение автора по real-E2E HTTP 400 на этой машине (не окружение-пропуск: это «устаревание теста»/живой ComfyUI конфиг — требует решения).
+
 ## ТЕКУЩЕЕ СОСТОЯНИЕ (для новой сессии OpenCode)
 
 > Заполнено 2026-09-15 (Этап 1, шаг 1: real-E2E skip).

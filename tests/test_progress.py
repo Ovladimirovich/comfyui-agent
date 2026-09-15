@@ -19,34 +19,105 @@ from app.engine import ExecutionPlan, JobState, WorkflowEngine
 from app.engine.websocket import ComfyUIWebSocket
 from app.provider import BackendRef
 from app.registry import WorkflowRegistry
+from app.registry.runtime import RuntimeInfo
 
 _1PX_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 )
 
+_FAKE_RUNTIME_DICT = {
+    "accelerator": "directml",
+    "vram_gb": 12.0,
+    "fp16": True,
+    "xformers": False,
+    "lowvram": True,
+    "comfyui_version": "0.34.5",
+}
+
+
+class FakeClient:
+    """Заглушка ComfyClient: сеть не нужна, engine ходит в get_job/view."""
+
+    def __init__(self, base_url: str = "http://127.0.0.1:9999") -> None:
+        self.base_url = base_url
+
+    def get_system_stats(self):
+        return {"devices": [{"type": "directml", "vram_total": 12 * 1024 ** 3}]}
+
+    def get_object_info(self) -> dict:
+        return {
+            "CreateVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SaveVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SoniloTextToMusic": {"python_module": "custom_nodes.sonilo"},
+            "SaveAudio": {"python_module": "custom_nodes.sonilo"},
+            "PollinationsImageGen": {"python_module": "custom_nodes.pollinations_byop"},
+        }
+
+    def view(self, filename: str, subfolder: str = "", type_: str = "output") -> bytes:
+        if filename.endswith(".wav"):
+            return b"RIFF\x00\x00\x00\x00WAVEfmt "
+        if filename.endswith((".png", ".jpg")):
+            return b"\x89PNG\r\n\x1a\n"
+        if filename.endswith(".mp4"):
+            return b"\x00\x00\x00\x18ftypmp42"
+        return b"data"
+
+    def discover_checkpoints(self) -> list[str]:
+        return ["checkpoint"]
+
 
 class _FakeProvider:
-    def __init__(self):
-        self.client = type("C", (), {"base_url": "http://fake"})()
-        self.backend_id = "fake"
+    """Заглушка ComfyUIProvider: execute возвращает pid, get_job — готовые выходы."""
+
+    def __init__(self, backend_id: str = "fake_comfyui") -> None:
+        self.client = FakeClient()
+        self.backend_id = backend_id
 
     def upload_asset(self, asset):
-        return BackendRef("comfyui", "fake", {"filename": "f"})
+        from app.provider.backend_ref import BackendRef
 
-    def execute(self, prompt, client_id=None):
-        return "pid"
+        return BackendRef(
+            provider="comfyui",
+            backend=self.backend_id,
+            reference={"filename": asset.path.split("/")[-1], "subfolder": "", "type": "input"},
+        )
 
-    def get_job(self, prompt_id):
-        return {}
+    def execute(self, prompt: dict, client_id=None) -> str:
+        return "fake-prompt-id"
 
-    def cancel(self, prompt_id):
+    def get_job(self, prompt_id: str) -> dict:
+        return {
+            prompt_id: {
+                "status": {"status_str": "success"},
+                "outputs": {
+                    "9": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
+                    "8": {"gifs": [{"filename": "out.mp4", "subfolder": "", "type": "output"}]},
+                    "2": {"audio": [{"filename": "out.wav", "subfolder": "multimodal", "type": "output"}]},
+                },
+            }
+        }
+
+    def view(self, ref) -> bytes:
+        return self.client.view(ref.reference["filename"])
+
+    def cancel(self, prompt_id: str) -> None:
         pass
 
-    def view(self, ref):
-        return b"\x89PNG\r\n\x1a\n"
-
-    def discover_checkpoints(self):
+    def discover_checkpoints(self) -> list:
         return []
+
+
+def _patch_runtime(monkeypatch):
+    """Подменить discover_runtime на фейковый runtime с fp16=True.
+
+    discover_runtime(client) вызывается с клиентом — лямбда обязана принимать
+    аргумент, иначе TypeError → runtime=None → workflow runtime-dependent
+    остаётся UNKNOWN (AD-18).
+    """
+    monkeypatch.setattr(
+        "app.agent.discover_runtime",
+        lambda _client: RuntimeInfo(**_FAKE_RUNTIME_DICT),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -210,6 +281,7 @@ def test_conversation_turn_passes_on_progress(tmp_path, monkeypatch):
         return {"9": {"images": [{"filename": "x.png"}]}}
 
     monkeypatch.setattr(ComfyUIWebSocket, "track", fake_track)
+    _patch_runtime(monkeypatch)
 
     store = AssetStore(root=tmp_path)
     agent = ConversationAgent(store)
@@ -242,10 +314,9 @@ def test_ws_unavailable_no_fake_progress(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ComfyUIWebSocket, "track", fail_track)
 
-    # /history возвращает success (prompt_id = "pid" из _FakeProvider.execute)
-    # get_history возвращает {prompt_id: {status, outputs}} — полный ответ ComfyUI
+    # ключ должен совпадать с тем, что возвращает _FakeProvider.execute()
     fake_history = {
-        "pid": {
+        "fake-prompt-id": {
             "status": {"status_str": "success"},
             "outputs": {"9": {"images": [{"filename": "out.png"}]}},
         }
@@ -253,7 +324,7 @@ def test_ws_unavailable_no_fake_progress(tmp_path, monkeypatch):
 
     class ProviderWithHistory(_FakeProvider):
         def get_job(self, prompt_id):
-            return fake_history  # возвращает {prompt_id: entry}, как get_history
+            return fake_history
 
     store = AssetStore(root=tmp_path / "store")
     reg = WorkflowRegistry()
@@ -357,6 +428,8 @@ def test_ws_timeout_15s_fast_fallback(tmp_path, monkeypatch):
     from app.engine.websocket import ComfyUIWebSocketError
     from app.ui import ComfyUIServer, SessionStream
 
+    _patch_runtime(monkeypatch)
+
     def fail_track(self_ws, prompt_id, timeout=300, on_progress=None):
         # Имитируем DirectML: WS подключается, но execution events не приходят.
         # Ждём timeout секунд и выбрасываем ошибку.
@@ -365,44 +438,12 @@ def test_ws_timeout_15s_fast_fallback(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ComfyUIWebSocket, "track", fail_track)
 
-    # Fake provider с /history fallback
-    fake_history = {
-        "pid_ws15": {
-            "status": {"status_str": "success"},
-            "outputs": {"9": {"images": [{"filename": "out.png"}]}},
-        }
-    }
-
-    class FakeClient:
-        base_url = "http://fake"
-
-    class FakeProvider:
-        client = FakeClient()
-        backend_id = "fake"
-
-        def execute(self, prompt, client_id=None):
-            return "pid_ws15"
-
-        def get_job(self, prompt_id):
-            return fake_history
-
-        def upload_asset(self, asset):
-            from app.provider import BackendRef
-            return BackendRef("comfyui", "fake", {"filename": "f"})
-
-        def view(self, ref):
-            return b"\x89PNG\r\n\x1a\n"
-
-        def cancel(self, prompt_id):
-            pass
-
-        def discover_checkpoints(self):
-            return []
-
     store = AssetStore(root=tmp_path)
     from app.conversation import ConversationAgent
     agent = ConversationAgent(store)
-    provider = FakeProvider()
+    # Канонический FakeProvider: client.discover_checkpoints → ["checkpoint"],
+    # execute() → "fake-prompt-id", get_job() возвращает выходы для нод 9/8/2.
+    provider = _FakeProvider()
 
     server = ComfyUIServer(store, agent=agent, provider=provider)
     stream = server.stream("ws15_test")

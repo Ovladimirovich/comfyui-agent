@@ -28,47 +28,104 @@ from app.conversation import ConversationAgent
 from app.engine import JobState
 from app.planner import HeuristicPlanner, PlanContext, PlanResult
 from app.ui import ComfyUIServer, _make_handler
+from app.registry.runtime import RuntimeInfo
 
+# Канонический FakeClient/FakeProvider (как test_agent.py)
+_FAKE_RUNTIME_DICT = {
+    "accelerator": "directml",
+    "vram_gb": 12.0,
+    "fp16": True,
+    "xformers": False,
+    "lowvram": True,
+    "comfyui_version": "0.34.5",
+}
 
-# --- FakeProvider (как test_agent.py) ---
 
 class FakeClient:
     def __init__(self, base_url="http://127.0.0.1:9999"):
         self.base_url = base_url
+
     def get_system_stats(self):
-        raise RuntimeError("offline")
-    def get_object_info(self):
-        return {}
+        return {"devices": [{"type": "directml", "vram_total": 12 * 1024 ** 3}]}
+
+    def get_object_info(self) -> dict:
+        return {
+            "CreateVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SaveVideo": {"python_module": "custom_nodes.videohelpersuite"},
+            "SoniloTextToMusic": {"python_module": "custom_nodes.sonilo"},
+            "SaveAudio": {"python_module": "custom_nodes.sonilo"},
+            "PollinationsImageGen": {"python_module": "custom_nodes.pollinations_byop"},
+        }
+
     def view(self, filename, subfolder="", type_="output"):
-        return b"\x89PNG\r\n\x1a\n"
+        if filename.endswith(".wav"):
+            return b"RIFF\x00\x00\x00\x00WAVEfmt "
+        if filename.endswith((".png", ".jpg")):
+            return b"\x89PNG\r\n\x1a\n"
+        if filename.endswith(".mp4"):
+            return b"\x00\x00\x00\x18ftypmp42"
+        return b"data"
+
+    def discover_checkpoints(self) -> list[str]:
+        return ["checkpoint"]
 
 
 class FakeProvider:
     def __init__(self, backend_id="fake_comfyui"):
         self.client = FakeClient()
         self.backend_id = backend_id
+
     def upload_asset(self, asset):
         from app.provider.backend_ref import BackendRef
-        return BackendRef(provider="comfyui", backend=self.backend_id,
-                          reference={"filename": asset.path.split("/")[-1], "subfolder": "", "type": "input"})
+
+        return BackendRef(
+            provider="comfyui",
+            backend=self.backend_id,
+            reference={"filename": asset.path.split("/")[-1], "subfolder": "", "type": "input"},
+        )
+
     def execute(self, prompt, client_id=None):
         return "fake-prompt-id"
+
     def get_job(self, prompt_id):
-        return {prompt_id: {"status": {"status_str": "success"}, "outputs": {
-            "9": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
-            "30": {"images": [{"filename": "upscaled.png", "subfolder": "", "type": "output"}]},
-        }}}
+        return {
+            prompt_id: {
+                "status": {"status_str": "success"},
+                "outputs": {
+                    "9": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
+                    "30": {"images": [{"filename": "upscaled.png", "subfolder": "", "type": "output"}]},
+                    "2": {"audio": [{"filename": "out.wav", "subfolder": "multimodal", "type": "output"}]},
+                },
+            }
+        }
+
     def view(self, ref):
         return self.client.view(ref.reference["filename"])
+
     def cancel(self, prompt_id):
         pass
+
     def discover_checkpoints(self):
         return []
+
+
+def _patch_runtime(monkeypatch):
+    """Подменить discover_runtime на фейковый runtime с fp16=True.
+
+    discover_runtime(client) вызывается с клиентом — лямбда обязана принимать
+    аргумент, иначе TypeError → runtime=None → workflow runtime-dependent
+    остаётся UNKNOWN (AD-18).
+    """
+    monkeypatch.setattr(
+        "app.agent.discover_runtime",
+        lambda _client: RuntimeInfo(**_FAKE_RUNTIME_DICT),
+    )
 
 
 def _make_image_asset(store):
     """Создать image-ассет для тестов (валидный PNG-заголовок)."""
     import tempfile, os
+
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix="test_img_")
     tmp.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
     tmp.close()
@@ -79,7 +136,9 @@ def _make_image_asset(store):
 
 
 def _make_video_asset(store):
-    tmp = __import__("tempfile").NamedTemporaryFile(delete=False, suffix=".mp4", prefix="test_vid_")
+    import tempfile, os
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", prefix="test_vid_")
     tmp.write(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100)
     tmp.close()
     try:
@@ -90,27 +149,40 @@ def _make_video_asset(store):
 
 # --- 1. HeuristicPlanner: active image + edit-hint → image.edit ---
 
+
 def test_heuristic_edit_with_active_image():
     planner = HeuristicPlanner()
     ctx = PlanContext(active_asset_type="image", capabilities=["image.generate", "image.edit"])
-    for hint in ("сделай реалистивнее", "улучши изображение", "улучши", "enhance", "improve",
-                 "отредактируй", "make realistic", "better quality"):
+    for hint in (
+        "сделай реалистивнее",
+        "улучши изображение",
+        "улучши",
+        "enhance",
+        "improve",
+        "отредактируй",
+        "make realistic",
+        "better quality",
+    ):
         result = planner.plan(hint, context=ctx)
         assert result.capability == "image.edit", f"'{hint}' → {result.capability}, ожидалось image.edit"
 
 
 # --- 2. HeuristicPlanner: no active asset + edit-hint → fallback ---
 
+
 def test_heuristic_edit_without_active_fallback():
     planner = HeuristicPlanner()
     result = planner.plan("сделай реалистивнее")
     assert result.capability == "image.generate"
-    ctx_no_active = PlanContext(active_asset_type=None, capabilities=["image.generate", "image.edit"])
+    ctx_no_active = PlanContext(
+        active_asset_type=None, capabilities=["image.generate", "image.edit"]
+    )
     result2 = planner.plan("сделай реалистивнее", context=ctx_no_active)
     assert result2.capability == "image.generate"
 
 
 # --- 3. HeuristicPlanner: active video + edit-hint → NOT image.edit ---
+
 
 def test_heuristic_edit_with_active_video_no_image_edit():
     """active video + edit-hint → fallback на base mapping (video.generate не находит edit-хинты)."""
@@ -124,36 +196,49 @@ def test_heuristic_edit_with_active_video_no_image_edit():
 
 # --- 4. Explicit capability не переопределяется planner ---
 
-def test_explicit_capability_not_overridden():
+
+def test_explicit_capability_not_overridden(monkeypatch):
     """Если caller явно указал capability, planner не вызывается."""
+    _patch_runtime(monkeypatch)
     store = AssetStore(root="__tmptest_ctx_explicit__")
     agent = ConversationAgent(store)
     provider = FakeProvider()
     # turn 1: generate → Asset A
-    j1 = agent.turn("s1", capability="image.generate",
-                     params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
-                     provider=provider)
+    j1 = agent.turn(
+        "s1",
+        capability="image.generate",
+        params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
+        provider=provider,
+    )
     assert j1.state == JobState.SUCCESS
     ctx = agent.session("s1")
     assert ctx.active_asset is not None
     # turn 2: explicit capability="image.generate" — planner НЕ должен менять на image.edit
-    j2 = agent.turn("s2", capability="image.generate",
-                     params={"prompt": "ещё кот", "width": 64, "height": 64, "seed": 1, "steps": 5},
-                     provider=provider)
+    j2 = agent.turn(
+        "s2",
+        capability="image.generate",
+        params={"prompt": "ещё кот", "width": 64, "height": 64, "seed": 1, "steps": 5},
+        provider=provider,
+    )
     assert j2.state == JobState.SUCCESS
     assert ctx.active_workflow.startswith("txt2img@")
 
 
 # --- 5. ConversationAgent: turn 1 generate → turn 2 «сделай реалистивнее» → image.edit → lineage ---
 
-def test_conversation_agent_edit_chain():
+
+def test_conversation_agent_edit_chain(monkeypatch):
+    _patch_runtime(monkeypatch)
     store = AssetStore(root="__tmptest_ctx_chain__")
     agent = ConversationAgent(store)
     provider = FakeProvider()
     # turn 1: generate → Asset A
-    j1 = agent.turn("s1", capability="image.generate",
-                     params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
-                     provider=provider)
+    j1 = agent.turn(
+        "s1",
+        capability="image.generate",
+        params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
+        provider=provider,
+    )
     assert j1.state == JobState.SUCCESS
     a_id = j1.output_assets[0]
     ctx = agent.session("s1")
@@ -173,16 +258,24 @@ def test_conversation_agent_edit_chain():
 
 # --- 6. Session isolation ---
 
-def test_session_isolation_with_context_planner():
+
+def test_session_isolation_with_context_planner(monkeypatch):
+    _patch_runtime(monkeypatch)
     store = AssetStore(root="__tmptest_ctx_iso__")
     agent = ConversationAgent(store)
     provider = FakeProvider()
-    agent.turn("A", capability="image.generate",
-               params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
-               provider=provider)
-    agent.turn("B", capability="image.generate",
-               params={"prompt": "пёс", "width": 64, "height": 64, "seed": 1, "steps": 5},
-               provider=provider)
+    agent.turn(
+        "A",
+        capability="image.generate",
+        params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
+        provider=provider,
+    )
+    agent.turn(
+        "B",
+        capability="image.generate",
+        params={"prompt": "пёс", "width": 64, "height": 64, "seed": 1, "steps": 5},
+        provider=provider,
+    )
     ctx_a = agent.session("A")
     ctx_b = agent.session("B")
     assert ctx_a.active_asset != ctx_b.active_asset
@@ -192,18 +285,23 @@ def test_session_isolation_with_context_planner():
 
 # --- 7. Старый вызов planner без context ---
 
+
 def test_heuristic_without_context():
     planner = HeuristicPlanner()
-    for req, expected in [("сгенерируй кота", "image.generate"),
-                          ("сделай видео клип", "video.generate"),
-                          ("музыкальный трек", "audio.generate")]:
+    for req, expected in [
+        ("сгенерируй кота", "image.generate"),
+        ("сделай видео клип", "video.generate"),
+        ("музыкальный трек", "audio.generate"),
+    ]:
         result = planner.plan(req)
         assert result.capability == expected
 
 
 # --- 8. UI /turn: «сделай реалистивнее» через ConversationAgent ---
 
-def test_ui_turn_edit_via_heuristic():
+
+def test_ui_turn_edit_via_heuristic(monkeypatch):
+    _patch_runtime(monkeypatch)
     store = AssetStore(root="__tmptest_ctx_ui__")
     factory = ComfyUIServer(store, agent=ConversationAgent(store), provider=FakeProvider())
     handler = _make_handler(factory)
@@ -216,7 +314,9 @@ def test_ui_turn_edit_via_heuristic():
         sid = "ui-edit"
         # turn 1: generate
         data = json.dumps({"session_id": sid, "request": "сгенерируй кота"}).encode()
-        req = urllib.request.Request(f"{base}/turn", data=data, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            f"{base}/turn", data=data, headers={"Content-Type": "application/json"}
+        )
         urllib.request.urlopen(req, timeout=10)
         # дождаться active_asset
         for _ in range(50):
@@ -230,7 +330,9 @@ def test_ui_turn_edit_via_heuristic():
         a_id = ctx1["active_asset"]
         # turn 2: «сделай реалистивнее» → image.edit через HeuristicPlanner + context
         data2 = json.dumps({"session_id": sid, "request": "сделай реалистивнее"}).encode()
-        req2 = urllib.request.Request(f"{base}/turn", data=data2, headers={"Content-Type": "application/json"})
+        req2 = urllib.request.Request(
+            f"{base}/turn", data=data2, headers={"Content-Type": "application/json"}
+        )
         urllib.request.urlopen(req2, timeout=10)
         for _ in range(50):
             resp2 = urllib.request.urlopen(f"{base}/api/session?session_id={sid}", timeout=5)
@@ -251,27 +353,41 @@ def test_ui_turn_edit_via_heuristic():
 
 # --- 9. HeuristicPlanner: active image + upscale-хинт → image.upscale ---
 
+
 def test_heuristic_upscale_with_active_image():
     planner = HeuristicPlanner()
     caps = ["image.generate", "image.edit", "image.upscale"]
     ctx = PlanContext(active_asset_type="image", capabilities=caps)
-    for hint in ("увеличь разрешение", "сделай крупнее", "upscale",
-                 "масштабируй", "увеличь", "сделай в высоком разрешении"):
+    for hint in (
+        "увеличь разрешение",
+        "сделай крупнее",
+        "upscale",
+        "масштабируй",
+        "увеличь",
+        "сделай в высоком разрешении",
+    ):
         result = planner.plan(hint, context=ctx)
-        assert result.capability == "image.upscale", f"'{hint}' → {result.capability}, ожидалось image.upscale"
+        assert result.capability == "image.upscale", (
+            f"'{hint}' → {result.capability}, ожидалось image.upscale"
+        )
 
 
 # --- 10. ConversationAgent: 3-turn chain generate → edit → upscale ---
 
-def test_conversation_agent_three_turn_chain():
+
+def test_conversation_agent_three_turn_chain(monkeypatch):
     """Полный 3-ходовый сценарий: generate → edit → upscale."""
+    _patch_runtime(monkeypatch)
     store = AssetStore(root="__tmptest_3turn__")
     agent = ConversationAgent(store)
     provider = FakeProvider()
     # turn 1: generate → Asset A
-    j1 = agent.turn("s1", capability="image.generate",
-                     params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
-                     provider=provider)
+    j1 = agent.turn(
+        "s1",
+        capability="image.generate",
+        params={"prompt": "кот", "width": 64, "height": 64, "seed": 0, "steps": 5},
+        provider=provider,
+    )
     assert j1.state == JobState.SUCCESS
     a_id = j1.output_assets[0]
     ctx = agent.session("s1")
@@ -298,11 +414,14 @@ def test_conversation_agent_three_turn_chain():
 
 # --- 11. HeuristicPlanner: upscale-хинт без active_asset → fallback ---
 
+
 def test_heuristic_upscale_without_active_fallback():
     planner = HeuristicPlanner()
     result = planner.plan("увеличь разрешение")
     assert result.capability == "image.generate"
-    ctx_no_active = PlanContext(active_asset_type=None,
-                                capabilities=["image.generate", "image.edit", "image.upscale"])
+    ctx_no_active = PlanContext(
+        active_asset_type=None,
+        capabilities=["image.generate", "image.edit", "image.upscale"],
+    )
     result2 = planner.plan("увеличь разрешение", context=ctx_no_active)
     assert result2.capability == "image.generate"
