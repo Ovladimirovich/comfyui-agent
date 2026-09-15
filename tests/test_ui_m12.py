@@ -40,7 +40,13 @@ class FakeClient:
         raise RuntimeError("offline fake client")
 
     def get_object_info(self):
-        return {}
+        # AD-18 strict (текущий контракт, см. test_ui_m9.py): offline-selection
+        # требует, чтобы custom node выбранного workflow был объявлен наличным.
+        # txt2img offline UNAVAILABLE (placeholder checkpoint) → offline побеждает
+        # pollinations_image (требует custom node pollinations-byop).
+        return {
+            "PollinationsImageGen": {"python_module": "custom_nodes.pollinations-byop"},
+        }
 
     def view(self, filename, subfolder="", type_="output"):
         if filename.endswith(".wav"):
@@ -51,7 +57,10 @@ class FakeClient:
         return {"prompt_id": "fake-prompt-id"}
 
     def get_history(self, prompt_id):
+        # Отдаём выхлоп для node "2" (pollinations_image output) — текущий
+        # offline-выбор. Node "9" сохранён для txt2img-подобных путей.
         return {prompt_id: {"status": {"status_str": "success"}, "outputs": {
+            "2": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
             "9": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]},
         }}}
 
@@ -208,7 +217,9 @@ def test_ui_turn_with_composite_fallback():
         _, st = _get(f"{base}/api/session?session_id={sid}")
         ctx = json.loads(st)
         assert ctx["active_asset"], "active_asset должен появиться"
-        assert ctx["active_workflow"].startswith("txt2img@")
+        # Текущий offline-контракт (AD-18 strict): побеждает pollinations_image@
+        # (txt2img offline UNAVAILABLE — placeholder checkpoint). См. test_ui_m9.py.
+        assert ctx["active_workflow"].startswith("pollinations_image@")
         print(f"✓ test_ui_turn_with_composite_fallback: session={sid}, asset={ctx['active_asset']}")
     finally:
         httpd.shutdown()

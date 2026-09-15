@@ -18,7 +18,90 @@ NEXT RECOMMENDED TASK
 
 ## ТЕКУЩЕЕ СОСТОЯНИЕ (для новой сессии OpenCode)
 
-> Заполнено 2026-09-15 (maintenance-сессия: гигиена репо + CI fix).
+> Заполнено 2026-09-15 (Этап 1, шаг 1: real-E2E skip).
+
+- **Current milestone:** M26 — FROZEN. Выполнен **Этап 1, шаг 1** (APPROVED план): корректные skip для real-E2E тестов при недоступном ComfyUI. Production-код НЕ изменялся (только `conftest.py` — test-инфраструктура).
+- **Реализация:** `conftest.py` — `pytest_collection_modifyitems` + live socket-проба `_comfyui_alive()` на `127.0.0.1:8188`. Если ComfyUI недоступен, все тесты модулей `REAL_E2E_MODULES` (`test_http_external_e2e`, `test_http_request_e2e`, `test_http_request_real_e2e`, `test_knowledge_s4_full_e2e`, `test_knowledge_s4_real_e2e`, `test_m18_e2e_real`, `test_m19_e2e_real`, `test_m21_real_e2e`) помечаются `skip` с явной причиной. Если ComfyUI жив — тесты исполняются как раньше (поведение не изменено). Env `AGENT_E2E_FORCE_OFFLINE=1` — принудительный offline-режим (эмуляция CI/отладка).
+- **Верификация:** (а) collection чистая (`test_m18_e2e_real.py` — 8 collected); (б) эмуляция CI `AGENT_E2E_FORCE_OFFLINE=1` на 3 модулях → **28 skipped, 0 failed** (ранее было бы 28 failed); (в) офлайн-набор регрессии (`test_agent/planner/backends/m19_composer/ui_section21`) — **38 passed, 4 skipped** (прежние skip, без деградации); (г) probe: alive=True при живом ComfyUI, False на закрытом порту.
+- **Python для тестов:** `C:\Users\1\AppData\Local\Programs\Python\Python310\python.exe` (`.venv\Scripts\python.exe` НЕ имеет pytest — не использовать).
+- **Далее по APPROVED плану Этапа 1 (диагностический triage, новая сессия):**
+  1. ~~Real-E2E skip~~ ✅ (выполнено).
+  2. S4 `PlanContext` → привести тесты к ТЕКУЩЕМУ контракту `app/planner/plan.py` (не возвращать старый API).
+  3. ~12 pre-existing `AgentError: нет workflow с подтверждённой совместимостью` → сверить с известным дефектом (не маскировать).
+  4. Linux symlink (`test_m2_asset.py::test_security_symlink`) → определить контракт безопасности AssetStore.
+  5. `comfyui_mcp_server` import path в CI.
+  6. Только после этого — 9 UI-тестов (m12/m9b).
+- **Session boundary:** шаг 1 Этапа 1 завершён (implementation + verification, self-review: production-код не тронут, инварианты не задеты) → `START NEW SESSION` для шага 2 (S4 PlanContext triage).
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Этап 1, шаг 2: S4 PlanContext triage ✅ ВЫПОЛНЕНО (2026-09-15)
+
+- **Вердикт: все 8 падений — устаревшие тесты несостоявшегося дизайна.** Реальных дефектов production-кода НЕ обнаружено. Production API `validated_nodes` НЕ восстановлен (current architecture его не предусматривает).
+- **Source of truth:** `app/planner/plan.py::PlanContext(active_asset_type, capabilities, active_workflow, previous_prompt, explicit_asset_type)` — БЕЗ `validated_nodes`. Validated knowledge — concern `KnowledgeCore` (`get_validated_for_capability(capability)`, production API, жив). `Agent.generate()` вызывает `planner.plan(request)` без context (app/agent.py:1048); `ConversationAgent.turn()` строит `PlanContext` без validated_nodes (app/conversation.py:243/255); `HeuristicPlanner` не имеет validated_nodes-логики (grep: 0 упоминаний).
+- **Устаревшие предположения удалённых тестов:** (1) PlanContext принимает `validated_nodes`; (2) HeuristicPlanner аннотирует rationale `[validated_nodes: N]`; (3) Agent.generate прокидывает validated в planner-контекст. Все три не соответствуют ни текущему коду, ни S6-архитектуре (S6: validated knowledge читается KnowledgeCore, planner-контекст декларативен).
+- **FILES CHANGED:** только `tests/test_knowledge_s4_planner_integration.py` (тестовый слой). Классы переименованы по смыслу (TestPlanContext → контрактные поля + негативный `test_plan_context_has_no_validated_nodes_field`; TestHeuristicPlannerWithValidation → TestHeuristicPlannerWithContext; agent-тест → `test_agent_generate_calls_planner_without_validated_context` (захватывает plan(request, context=None), assert context is None); FullPath → validated читается из KnowledgeCore, контекст без validated_nodes). 3 passing-теста (`get_validated_for_capability` ×2, backward-compat) сохранены/не тронуты.
+- **TESTS:** `test_knowledge_s4_planner_integration.py` → **11 passed, 0 failed** (было 8 failed, 3 passed). Офлайн-регрессия (s4_planner_integration + planner + planner_context + agent + m19_composer + knowledge_core + m16_adaptive) → **105 passed, 5 failed** — 5 failed = `test_planner_context.py` (категория 3 APPROVED плана: «AgentError: нет workflow с подтверждённой совместимостью», pre-existing, шаг 3 — ВНЕ scope шага 2, не маскировались).
+- **git diff --stat (шаги 1+2):** conftest.py +50, tests/test_knowledge_s4_planner_integration.py ~168 rewritten, engineering/HANDOFF.md, engineering/CHANGELOG.md; `app/` и `workflows/` — 0 изменений (production не тронут).
+- **⚠️ Примечание (не в scope):** real-E2E файлы `test_knowledge_s4_full_e2e.py` / `test_knowledge_s4_real_e2e.py` тоже содержат `validated_nodes=...` в PlanContext — в CI их PlanContext-падения исчезнут вместе с остальными (skip по шагу 1), но при живом ComfyUI они упадут; относится к шагу 2b (отдельно) или будет закрыто в рамках шагов 3–5.
+- **Session boundary:** шаг 2 завершён → `START NEW SESSION` для шага 3 (сверка ~12 pre-existing «нет workflow с подтверждённой совместимостью» с известным дефектом).
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Этап 1, шаг 3: подтверждение pre-existing дефекта ✅ ВЫПОЛНЕНО (2026-09-15)
+
+- **Вердикт: подтверждена идентичность известному дефекту (HANDOFF 2026-09-08).** Локальный прогон категории 3: `test_planner_context.py` + `test_prompt_builder_integration_m11.py` + `test_progress.py` → **13 failed, 23 passed** (в CI ~12; локально на 1 больше, т.к. живой ComfyUI меняет ветки skip/fallback).
+- **Root cause (read-only, без изменений):** `AgentError: нет workflow с подтверждённой совместимостью` из `app/agent.py:443` — FakeProvider/фикстуры старого статического формата не проходят текущую цепочку `_select_manifest` (AD-18 runtime compatibility + S1 cost filter + S6 validated-score). Второй класс — `RuntimeError: нет выхлопа для output 'result' (node 2)` (engine.py:330, output-node mismatch manifest vs FakeProvider history) — та же несовместимость фиксур с текущей структурой image-манифестов.
+- **НЕ маскировано:** тесты НЕ помечены skip/xfail; production-код НЕ изменён. Это тестовые фикстуры старого формата, требующие приведения к текущему манифест-контракту (отдельная задача — кандидат в шаги 4–6 или отдельный milestone по команде автора, т.к. это не «окружение» и не «устаревший API», а рассинхрон тест-фикстур с эволюционировавшим selection-contract).
+- **Session boundary:** шаг 3 (подтверждение) завершён → следующая сессия: шаг 4 (Linux symlink контракт) или решение автора о починке фикстур категории 3.
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Этап 1, шаг 4: Linux symlink контракт ✅ ВЫПОЛНЕНО (2026-09-15)
+
+- **Вердикт: «DID NOT RAISE» на Linux — НЕ дефект безопасности production-кода, а некорректное ожидание теста.** Контракт безопасности AssetStore уточнён и подтверждён кодом (`app/assets/store.py`): (1) `_sanitize_name()` заменяет `/` и `\` на `_` и берёт basename — `stored_name` становится плоским именем БЕЗ разделителей ещё до `_confine`, поэтому symlink/traversal-escape через `stored_name` невозможен по построению; (2) `_confine()` (resolve-проверка) ловит оставшийся прямой escape. Старый тест ждал `PathSecurityError` на пути, который санируется в плоское имя — ожидание противоречило контракту; тест не выполнялся никогда (Windows всегда skip без привилегий symlink).
+- **Production-код НЕ изменён** (правильный контракт уже реализован; восстанавливать «старое ожидание» = ослабить санитизацию — запрещено).
+- **FILES CHANGED:** `tests/test_m2_asset.py::test_security_symlink` — переписан под контракт: (а) ingest с traversal-именем внутри symlink-dir НЕ бросает, файл создаётся внутри root, разделители нейтрализованы, `outside/escape.png` не появляется; (б) прямой escape (`../../evil.png`) по-прежнему → `PathSecurityError`. Тест теперь platform-независим (Linux CI выполнит его реально; Windows skip по привилегиям symlink).
+- **TESTS:** `tests/test_m2_asset.py` → **10 passed, 1 skipped** (symlink skip на Windows — привилегии; на Linux исполнится). Production `app/` — 0 изменений (подтверждено diff).
+- **Лимит верификации:** Linux-воспроизведение через Docker недоступно (Docker Desktop не запущен); подтверждение CI — после push (прогон GitHub Actions). Статический анализ контракта однозначен.
+- **Session boundary:** шаг 4 завершён → следующая сессия: шаг 5 (`comfyui_mcp_server` import path в CI).
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Этап 1, шаг 5 + шаг 6 ✅ ВЫПОЛНЕНО (2026-09-15)
+
+### Шаг 5: `comfyui_mcp_server` / `comfyui_api.py` import path
+- **Вердикт: артефакты НЕ существуют в репозитории** (`comfyui_mcp_server.py`, `comfyui_api.py` отсутствуют в корне и не отслеживаются git; `git ls-files | grep mcp` — пусто; `git log --all -- '*mcp_server*'` — пусто). Прежние тесты ссылались на хардкод `C:/cd/ComfyUI_AMD/comfyui_api.py` (вне репо) и модуль `comfyui_mcp_server`. HANDOFF S6 фиксирует: CLI-инфраструктура НЕ создавалась (запрет автора). Не дефект кода — тест-слой ссылался на нерепозиторные артефакты.
+- **FIX (тест-слой):** `tests/test_http_request_e2e.py` — repo-relative resolution (`_REPO_ROOT`/`_CLI_SCRIPT`/`_MCP_MODULE`); 4 теста (3 CLI + 1 MCP) теперь SKIP с явной причиной при отсутствии артефакта (ранее — error/`AttributeError`). Поведение тестов при наличии артефакта не изменено.
+- **ВЕРИФИКАЦИЯ:** `test_http_request_e2e.py` offline → 10 skipped, 0 failed; адресные CLI/MCP-тесты → 2 skipped с причиной.
+
+### Шаг 6: 9 UI-тестов (m12/m9b)
+- **m12 (6 падений) — устаревшая ТЕСТОВАЯ фикстура.** Root cause (probe): `FakeClient.get_object_info()` возвращал `{}` → `_select_manifest` (AD-18 strict: custom node должен быть объявлен наличным) → `AgentError: нет workflow с подтверждённой совместимостью`. Рабочий `test_ui_m9.py` уже содержит корректную фикстуру (объявляет `PollinationsImageGen`/`custom_nodes.pollinations-byop`, output node "2"). **FIX:** `tests/test_ui_m12.py` — `get_object_info()` приведён к AD-18-контракту; `get_history()` отдаёт node "2" (+"9"); assertion `active_workflow` → `pollinations_image@` (текущий offline-выбор). → **10 passed** (было 6 failed).
+- **m9b (3 падения) — DRAFT-фича §21, не реализована.** Тесты требуют `POST /api/jobs/{id}/cancel`, `ComfyUIServer.active_cancel_flags`, `turn(cancel_check=...)` (D-5A). Проверка: во ВСЁМ `app/` нет `cancel_check`/`active_cancel_flags` (`grep` — 0); в git-истории `app/conversation.py` их никогда не было. `docs/AGENT_UI_UI3_DESIGN.md` D-5A — спецификация (S12, DRAFT); `tasks/ACTIVE.md`: реализация §21 UI-1 (`/api/jobs/*`) требует команды автора (CHANGE_PROTOCOL). **FIX (честный skip, конвенция `test_ui_section21.py`):** 4 теста D-5A помечены `@pytest.mark.skip` с явной причиной (НЕ маскирует регрессию — фичи никогда не было в production). 3 upload-теста (`/api/assets`) проходят. → **3 passed, 4 skipped**.
+- **ИТОГ шага 6:** `test_ui_m12.py` 10 passed; `test_ui_cancel_assets_m9b.py` 3 passed / 4 DRAFT-skipped. Вместе — **13 passed, 4 skipped**.
+
+### Сессионные результаты (шаги 1–6 Этапа 1)
+- **Production-код НЕ изменён:** `git diff --name-only HEAD -- app/ workflows/` — пусто. Все изменения — тест-слой + docs.
+- **FILES CHANGED (шаги 1–6):** `conftest.py` (+real-E2E skip хук), `tests/test_knowledge_s4_planner_integration.py`, `tests/test_m2_asset.py`, `tests/test_http_request_e2e.py`, `tests/test_ui_m12.py`, `tests/test_ui_cancel_assets_m9b.py`, `engineering/HANDOFF.md`, `engineering/CHANGELOG.md`.
+- **Регрессия (offline):** UI+knowledge+m2 набор → **50 passed, 13 skipped, 0 failed**.
+- **Остаётся (вне закрытых шагов):** категория 3 («~12 AgentError: нет workflow с подтверждённой совместимостью», `test_planner_context.py` ×5, `test_prompt_builder_integration_m11.py` ×2, `test_progress.py` ×2 и др.) — шаг 3 подтвердил: это устаревшие Е2Е-фикстуры старого статического формата (не проходят AD-18), требующие приведения к текущему контракту; отдельная задача (возможно новый milestone по команде автора). НЕ маскировалось.
+- **Session boundary:** все 6 шагов APPROVED плана Этапа 1 выполнены (implementation + verification, production не тронут) → `START NEW SESSION` для категории 3 (фикстуры AD-18) или следующей команды автора.
+
+---
+
+## SESSION BOUNDARY — стартовая точка следующей сессии: КАТЕГОРИЯ 3 (2026-09-15)
+
+**Рекомендация: START NEW SESSION.** Этап 1 (шаги 1–6) закрыт и принят. Следующий самостоятельный логический этап — починка категории 3 (решение автора получено).
+
+- **Current phase:** Этап 1 (диагностический triage CI) — COMPLETE / ACCEPTED. Категория 3 НЕ входила в 6 шагов; это отдельный scope.
+- **Repository handoff:** `engineering/HANDOFF.md` (блоки шагов 1–6 + этот), `engineering/CHANGELOG.md`; изменённые тест-файлы; `tasks/ACTIVE.md`.
+- **Next session should begin with:**
+  1. Read `AGENTS.md` → `engineering/HANDOFF.md` (блоки «Этап 1, шаги 1–6» и «SESSION BOUNDARY — КАТЕГОРИЯ 3»).
+  2. Воспроизвести: `C:\Users\1\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/test_planner_context.py tests/test_prompt_builder_integration_m11.py tests/test_progress.py -q` → ожидается **13 failed, 23 passed**.
+  3. Fix = привести `FakeClient` к КАНОНИЧЕСКОМУ шаблону из зелёного `tests/test_agent.py` (НЕ менять production `app/`):
+     - `get_system_stats()` → фейковые stats ЛИБО `patch("app.agent.discover_runtime", return_value=_FAKE_RUNTIME)`, где `_FAKE_RUNTIME = RuntimeInfo(accelerator="directml", vram_gb=12.0, fp16=True, xformers=False, lowvram=True, comfyui_version="0.34.5")` (см. `tests/test_agent.py:20-25`);
+     - `discover_checkpoints()` → `["checkpoint"]` (placeholder для legacy `required_models=["checkpoint"]`, см. `tests/test_agent.py:63-68`);
+     - `get_object_info()` → объявить нужные custom nodes (AD-18 strict);
+     - `get_job()` → корректные output-ноды под манифесты (txt2img/img2img `outputs.result.node="9"`).
+  4. Root cause (подтверждён read-only): txt2img/img2img имеют runtime-dependent требования (`requirements.fp16=true`, `min_vram_gb=4`) → при `runtime=None` `_compatibility_from_known` даёт UNKNOWN (agent.py:334-337) → `AgentError` (agent.py:443). `test_progress.py` — доп. класс `RuntimeError: нет выхлопа для output 'result'` (node mismatch, engine.py:330).
+  5. Прецедент: шаг 6 починил m12 тем же способом (блок «шаг 5 + шаг 6»); `tests/test_ui_m9.py` и `tests/test_agent.py` — эталонные зелёные фикстуры.
+  6. После фикса: прогнать 3 файла + офлайн-регрессию; проверить `git diff --name-only HEAD -- app/ workflows/` = пусто; обновить HANDOFF/CHANGELOG.
+- **Запреты:** не менять production `app/`; не понижать AD-18 (runtime UNKNOWN ≠ AVAILABLE); не возвращать старый API; не маскировать реальные регрессии skip/xfail без доказательства устаревшей фикстуры.
+- **STOP AND WAIT** — следующая сессия стартует отсюда.
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — предыдущее (2026-09-15, maintenance: гигиена репо + CI fix)
 
 - **Current milestone:** M26 — FROZEN (без изменений). Выполнено maintenance: гигиена репозитория + GitHub Actions CI fix.
 - **Last completed activity (2026-09-15, вторая половина):**
@@ -26,8 +109,35 @@ NEXT RECOMMENDED TASK
   2. **Локальная верификация офлайн-набора:** офлайн unit/integration-подмножество (16 key-файлов, вкл. `test_ui_section21.py`) — **249 passed, 5 skipped**, зелёное локально.
   3. **Collection verified:** полный `tests/` собирается чисто — **1182 теста, 0 collection errors** (collection fix через conftest работает).
   4. `gh` не авторизован (`gh auth login` не выполнен); GitHub API недоступен без auth (rate limit) — статус прогона проверять через web-интерфейс Actions.
-- **Pending:** (а) проверить результат CI-прогона `355d878` на github.com/Ovladimirovich/comfyui-agent → Actions; (б) при падениях в job `unit` — починить по логу (известные pre-existing: 9 падений в `test_ui_m12.py`/`test_ui_cancel_assets_m9b.py`); (в) `gh auth login` для локального просмотра CI-статуса; (г) по команде автора — Этап 2 (§21 API endpoints).
-- **Session boundary:** CI-фикс завершён → START NEW SESSION для починки UI-тестов по CI-логу (Этап 1) или §21-эндпоинтов (Этап 2, по команде автора).
+- **CI-верификация (2026-09-15, новая сессия):** прогон `355d878` (run id 34933316789) — **failure**; job `Unit / Integration (offline)` — failure, `Full suite` — skipped (manual). Логи API требуют auth; падения воспроизведены локально: **ровно 9 failed, 8 passed** в `test_ui_m12.py` + `test_ui_cancel_assets_m9b.py` — список совпадает с ожидаемым pre-existing:
+  1. `test_ui_m12.py::test_ui_turn_with_composite_fallback`
+  2. `test_ui_m12.py::test_ui_sse_progress_events`
+  3. `test_ui_m12.py::test_ui_llm_unavailable_fallback`
+  4. `test_ui_m12.py::test_ui_prompt_lineage`
+  5. `test_ui_m12.py::test_ui_multiturn_context`
+  6. `test_ui_m12.py::test_ui_session_isolation`
+  7. `test_ui_cancel_assets_m9b.py::test_cancel_no_active_turn_409`
+  8. `test_ui_cancel_assets_m9b.py::test_retry_boundary_cancel_via_cancel_check`
+  9. `test_ui_cancel_assets_m9b.py::test_soft_cancel_e2e_via_ui`
+  Также на HEAD `3f7a83d` CI тоже failure — статус не изменился. Остальной офлайн-набор зелёный (локально verified).
+- **⚠️ КРИТИЧЕСКОЕ РАСХОЖДЕНИЕ (по полному CI-логу, скачан через токен в `ci_logs.zip`): в CI падает ~60+ тестов, НЕ только 9.** Локально (Windows, Python 3.10) их нет. Категории падений в CI (ubuntu-latest, Python 3.12):
+  1. **~25× «ComfyUI недоступен по http://127.0.0.1:8188»** (`test_http_external_e2e.py`, `test_http_request_e2e.py`, `test_http_request_real_e2e.py`, `test_knowledge_s4_full_e2e.py`, `test_knowledge_s4_real_e2e.py`, `test_m18_e2e_real.py`, `test_m19_e2e_real.py`, `test_m21_real_e2e.py`) — эти тесты должны SKIP без живого ComfyUI (маркер skip отсутствует/не срабатывает на Linux). Это главная причина CI-failure.
+  2. **~14× `PlanContext.__init__() got an unexpected keyword argument 'validated_nodes'`** (`test_knowledge_s4_planner_integration.py`, `test_knowledge_s4_full_e2e.py`, `test_knowledge_s4_real_e2e.py`) — тесты S4 используют устаревший API PlanContext (не соответствует текущему `app/planner/plan.py`). На Windows они не собирались/пропускались иначе — проверить.
+  3. **~12× `AgentError: нет workflow с подтверждённой совместимостью`** (`test_planner_context.py` ×5, `test_prompt_builder_integration_m11.py` ×2, `test_ui_cancel_assets_m9b.py` ×1, `test_progress.py` ×2) — известный pre-existing (см. HANDOFF 2026-09-08), на Windows тоже частично падает, но в CI больше.
+  4. **9× UI m12/m9b** (см. выше) — совпадают с локальными.
+  5. Одиночные: `test_m2_asset.py::test_security_symlink` (DID NOT RAISE PathSecurityError — на Linux symlink-тест ведёт себя иначе, чем на Windows), `test_http_request_e2e.py` CLI/MCP-тесты (`No module named 'comfyui_mcp_server'` — модуль в корне репо не на пути CI).
+- **Вывод:** «9 pre-existing» — НЕ полная картина CI. Настоящий Этап 1 = починка CI: (а) добавить корректные skip-маркеры для real-E2E тестов без ComfyUI; (б) синхронизировать S4-тесты с актуальным PlanContext или пометить skip/xfail; (в) починить symlink-тест под Linux; (г) путь к `comfyui_mcp_server` для CLI-тестов; (д) затем 9 UI-тестов.
+- Токен GH работает; команда: `$env:GH_TOKEN="<token>"; gh run view <id> --repo Ovladimirovich/comfyui-agent --log-failed` или логи-зип через API. Токен засвечен в чате — автору рекомендуется отозвать после сессии.
+- **Pending:** (а) починить 9 UI-тестов (Этап 1) по точному списку выше; (б) `gh auth login` для локального просмотра CI-логов; (в) по команде автора — Этап 2 (§21 API endpoints).
+- **APPROVED план Этапа 1 (диагностика, от автора 2026-09-15):** НЕ чинить все 60+ подряд; разделить ошибки окружения / устаревшие тесты / реальные регрессии. Порядок:
+  1. Real-E2E без ComfyUI → корректный skip (без изменения production-кода).
+  2. S4 `PlanContext` → привести тесты к ТЕКУЩЕМУ контракту (не возвращать старый API).
+  3. ~12 pre-existing → подтвердить идентичность известному дефекту из HANDOFF (не маскировать).
+  4. Linux symlink → определить, что является контрактом безопасности (не делать тест Windows-специфичным ради CI).
+  5. `comfyui_mcp_server` → чинить CI/import setup (модуль — часть репо).
+  6. Только после этого — 9 UI-тестов.
+  ⚠️ Утверждение «проект в порядке» преждевременно: до получения чистого baseline нельзя исключать реальные регрессии. Этап — диагностический, новая реализация не начинается.
+- **Session boundary:** CI-диагностика завершена, план Этапа 1 утверждён → START NEW SESSION для диагностического triage (Этап 1) по порядку выше. §21-эндпоинты (Этап 2) — после стабилизации CI, по команде автора.
 
 ## ТЕКУЩЕЕ СОСТОЯНИЕ — предыдущее (AD-48, 2026-09-14)
 

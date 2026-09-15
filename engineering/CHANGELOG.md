@@ -2,6 +2,18 @@
 
 Техническая история проекта. Не писать каждую изменённую строку.
 
+## 2026-09-15 (часть 4) — Полный CI-лог получен (токен); расхождение «9 vs ~60+» зафиксировано
+- **Milestone:** maintenance (верификация).
+- **Changes:** код не изменялся. Второй токен автора валиден — полный лог job `unit` прогона `355d878` скачан через API (`ci_logs.zip`, разобран). Обнаружено: в CI (ubuntu, Python 3.12) падает **~60+ тестов**, а не только 9 локальных. Категории: (1) ~25 real-E2E тестов падают с «ComfyUI недоступен» вместо skip — отсутствуют корректные skip-маркеры на Linux; (2) ~14 S4-тестов используют устаревший API `PlanContext(validated_nodes=...)` (TypeError) — рассинхрон тестов с `app/planner/plan.py`; (3) ~12 «нет workflow с подтверждённой совместимостью»; (4) 9 UI m12/m9b (совпадают с локальными); (5) одиночные: symlink-тест на Linux, `No module named 'comfyui_mcp_server'` в CI.
+- **Tests:** полный список FAILED в `engineering/HANDOFF.md` (блок CI-верификации).
+- **Known limitations:** токены, переданные в чат, засвечены — автору рекомендуется отозвать оба на github.com/settings/tokens. Временные файлы (`ci_logs.zip`, `ci_failed_log.txt`, `ci_full_log.txt`) удалены из рабочей директории.
+
+## 2026-09-15 (часть 3) — CI-верификация прогона `355d878`
+- **Milestone:** maintenance (верификация).
+- **Changes:** код не изменялся. Проверен статус CI через публичный GitHub API (без auth): прогон `355d878` (run id 34933316789) — **failure**; job `Unit / Integration (offline)` — failure, `Full suite` — skipped (manual). Также failure на HEAD `3f7a83d`.
+- **Tests:** логи API требуют auth → падения воспроизведены локально (Python 3.10): **ровно 9 failed, 8 passed** в `test_ui_m12.py` + `test_ui_cancel_assets_m9b.py` — список полностью совпадает с ожидаемыми pre-existing. Остальной офлайн-набор зелёный.
+- **Known limitations:** `gh` не авторизован (для логов CI выполнить `gh auth login`); venv `.venv` без pip/pytest — тесты запускаются через системный Python (`C:\Users\1\AppData\Local\Programs\Python\Python310\python.exe -m pytest`).
+
 ## 2026-09-15 (часть 2) — CI fix: workflow был невидим для GitHub Actions
 - **Milestone:** maintenance (продолжение).
 - **Changes:**

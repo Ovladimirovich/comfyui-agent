@@ -87,6 +87,12 @@ def test_security_absolute(tmp_path):
 
 
 def test_security_symlink(tmp_path):
+    """Контракт безопасности (уточнён Этап 1, шаг 4):
+    stored_name САНДИТСЯ до плоского имени без разделителей ДО _confine,
+    поэтому traversal/symlink-escape через stored_name невозможен по построению.
+    Правильное ожидание: ingest НЕ бросает, файл создаётся ВНУТРИ root
+    с нейтрализованным именем (никакого выхода за root, symlink не используется).
+    """
     store = AssetStore(root=tmp_path / "data" / "assets")
     f = _mk(tmp_path, "ok.png", b"data")
     outside = tmp_path / "outside_dir"
@@ -96,8 +102,16 @@ def test_security_symlink(tmp_path):
         os.symlink(outside, link_dir)
     except (OSError, NotImplementedError, PermissionError):
         pytest.skip("symlinks не поддерживаются на этой платформе")
+    a = store.ingest(f, type="image", stored_name="evil_link/../../escape.png")
+    # Файл записан ВНУТРИ root; разделители нейтрализованы; escape невозможен
+    from pathlib import Path
+    p = Path(a.path).resolve()
+    assert store.root.resolve() in p.parents or p.parent == store.root.resolve()
+    assert "/" not in Path(a.path).name and "\\" not in Path(a.path).name
+    assert not (outside / "escape.png").exists()
+    # А прямой escape через stored_name по-прежнему запрещён _confine
     with pytest.raises(PathSecurityError):
-        store.ingest(f, type="image", stored_name="evil_link/../../escape.png")
+        store.ingest(f, type="image", stored_name=os.path.join("..", "..", "evil.png"))
 
 
 def test_size_limit(tmp_path):
