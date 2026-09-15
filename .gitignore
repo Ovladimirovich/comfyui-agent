@@ -56,4 +56,6 @@ desktop.ini
 
 # ComfyUI local data (if any)
 ComfyUI/
-models/
+models/agent_ui/node_modules/
+agent_ui/dist/
+agent_ui/tsconfig.tsbuildinfo
