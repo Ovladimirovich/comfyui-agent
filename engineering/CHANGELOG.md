@@ -2,6 +2,19 @@
 
 Техническая история проекта. Не писать каждую изменённую строку.
 
+## 2026-09-15 — Repo hygiene + GitHub Actions CI + pytest collection fix
+- **Milestone:** maintenance (не milestone; вне frozen M1–M26).
+- **Changes:**
+  1. `.gitignore` — добавлены `__test_*/`, `__tmpx__/`, `_sym_*.txt`, `_diag.txt`, `_bad17.txt`, `agent_ui/node_modules/`, `agent_ui/dist/`, `agent_ui/tsconfig.tsbuildinfo`.
+  2. Удалены из корня ~110 мусорных `__tmp*`/`__test*` директорий и диагностические `_*.txt` файлы (runtime-артефакты тестов).
+  3. `agent_ui/node_modules` и `dist` убраны из git-индекса (были случайно закоммичены).
+  4. `conftest.py` — `collect_ignore_glob` для `tests/test_m11_verification.py`: это ручной verification-скрипт (запуск: `python tests/test_m11_verification.py`), выполнял код верхнего уровня при import и валил ВЕСЬ pytest collection (pre-existing failure из HANDOFF 2026-09-14).
+  5. `docs/INDEX.md` — навигатор по 60+ документам (порядок чтения + карта по категориям).
+  6. `.github/workflows/tests.yml` — GitHub Actions CI: job `unit` (offline тесты, Python 3.12, pytest-timeout 120s, auto на push/PR) + job `full-suite` (вкл. slow E2E, timeout 300s, вручную через workflow_dispatch). Тесты больше не требуют локального железа.
+  7. Commit + push: `ec5cd05`, `9dcf05a` → origin/main. Первый CI-прогон запущен автоматически.
+- **Tests:** локальный полный прогон не завершён (медленное железо, E2E-таймауты); переносится в CI. Collection больше не падает.
+- **Known limitations:** `gh` CLI не авторизован — статус CI смотреть на github.com → Actions (или `gh auth login`). Приватный репо: API без токена недоступен.
+
 <!-- id:v5e0am -->
 Формат:
 ```text

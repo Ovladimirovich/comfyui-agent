@@ -18,6 +18,20 @@ NEXT RECOMMENDED TASK
 
 ## ТЕКУЩЕЕ СОСТОЯНИЕ (для новой сессии OpenCode)
 
+> Заполнено 2026-09-15 (maintenance-сессия: гигиена репо + CI).
+
+- **Current milestone:** M26 — FROZEN (без изменений). Выполнено maintenance: гигиена репозитория + GitHub Actions CI.
+- **Last completed activity (2026-09-15):**
+  1. `.gitignore` расширен; ~110 мусорных `__tmp*`/`__test*` директорий и `_sym_*.txt` удалены из корня; `agent_ui/node_modules`/`dist` убраны из git-индекса.
+  2. `docs/INDEX.md` создан — навигатор по документации.
+  3. `conftest.py`: `tests/test_m11_verification.py` исключён из pytest-сбора (ручной скрипт, валил collection) — pre-existing failure закрыт.
+  4. `.github/workflows/tests.yml`: CI на GitHub Actions — unit/integration (auto на push, Python 3.12, pytest-timeout) + full-suite (вручную, workflow_dispatch). Тесты больше не требуют локального железа.
+  5. Commits `ec5cd05`, `9dcf05a` + follow-up запушены в origin/main; первый CI-прогон запущен автоматически.
+- **Pending:** (а) проверить результат первого CI-прогона на github.com → Actions; (б) починить 9 pre-existing падений в `test_ui_m12.py`/`test_ui_cancel_assets_m9b.py` — по результатам CI-лога (локальный полный прогон медленный, перенесён в CI); (в) `gh auth login` для локального просмотра CI-статуса.
+- **Session boundary:** maintenance-этап завершён → START NEW SESSION для починки UI-тестов (Этап 1) или §21-эндпоинтов (Этап 2, по команде автора).
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — предыдущее (AD-48, 2026-09-14)
+
 > Заполняется перед логической границей сессии. Новая сессия восстанавливает состояние отсюда, не из истории чата. Правила границ сессий — в `AGENTS.md` §Session Boundary Management.
 
 - **Current milestone:** M26 — FROZEN. Ecosystem-First: **S0.5/S1/S2/S3/S6 FROZEN**. **AD-48 ← новый** (2026-09-14): Knowledge wiring в production-агента + read-only UI endpoints — реализован, тесты зелёные, docs обновлены.
