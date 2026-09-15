@@ -2,6 +2,15 @@
 
 Техническая история проекта. Не писать каждую изменённую строку.
 
+## 2026-09-15 (часть 2) — CI fix: workflow был невидим для GitHub Actions
+- **Milestone:** maintenance (продолжение).
+- **Changes:**
+  1. Обнаружено: workflow был закоммичен как **blob-файл с именем `.github/workflows`** (без имени `tests.yml`) — GitHub Actions такой файл НЕ видит, первые прогоны не запускались.
+  2. Blob удалён из git (`git rm --cached`); создан корректный `.github/workflows/tests.yml` (то же содержимое: job `unit` auto на push/PR + job `full-suite` вручную).
+  3. Commit `355d878` запушен — push запустил первый реальный CI-прогон.
+- **Tests:** локальная верификация — офлайн-подмножество (16 key-файлов) **249 passed, 5 skipped**; collection полного `tests/` чистая (**1182 теста, 0 collection errors**).
+- **Known limitations:** `gh` не авторизован; GitHub API без токена недоступен (rate limit) — статус прогона проверять на github.com → Actions.
+
 ## 2026-09-15 — Repo hygiene + GitHub Actions CI + pytest collection fix
 - **Milestone:** maintenance (не milestone; вне frozen M1–M26).
 - **Changes:**

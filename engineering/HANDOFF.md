@@ -18,17 +18,16 @@ NEXT RECOMMENDED TASK
 
 ## ТЕКУЩЕЕ СОСТОЯНИЕ (для новой сессии OpenCode)
 
-> Заполнено 2026-09-15 (maintenance-сессия: гигиена репо + CI).
+> Заполнено 2026-09-15 (maintenance-сессия: гигиена репо + CI fix).
 
-- **Current milestone:** M26 — FROZEN (без изменений). Выполнено maintenance: гигиена репозитория + GitHub Actions CI.
-- **Last completed activity (2026-09-15):**
-  1. `.gitignore` расширен; ~110 мусорных `__tmp*`/`__test*` директорий и `_sym_*.txt` удалены из корня; `agent_ui/node_modules`/`dist` убраны из git-индекса.
-  2. `docs/INDEX.md` создан — навигатор по документации.
-  3. `conftest.py`: `tests/test_m11_verification.py` исключён из pytest-сбора (ручной скрипт, валил collection) — pre-existing failure закрыт.
-  4. `.github/workflows/tests.yml`: CI на GitHub Actions — unit/integration (auto на push, Python 3.12, pytest-timeout) + full-suite (вручную, workflow_dispatch). Тесты больше не требуют локального железа.
-  5. Commits `ec5cd05`, `9dcf05a` + follow-up запушены в origin/main; первый CI-прогон запущен автоматически.
-- **Pending:** (а) проверить результат первого CI-прогона на github.com → Actions; (б) починить 9 pre-existing падений в `test_ui_m12.py`/`test_ui_cancel_assets_m9b.py` — по результатам CI-лога (локальный полный прогон медленный, перенесён в CI); (в) `gh auth login` для локального просмотра CI-статуса.
-- **Session boundary:** maintenance-этап завершён → START NEW SESSION для починки UI-тестов (Этап 1) или §21-эндпоинтов (Этап 2, по команде автора).
+- **Current milestone:** M26 — FROZEN (без изменений). Выполнено maintenance: гигиена репозитория + GitHub Actions CI fix.
+- **Last completed activity (2026-09-15, вторая половина):**
+  1. **КРИТИЧЕСКИЙ ФИКС CI:** обнаружено, что workflow был закоммичен как **blob-файл с именем `.github/workflows`** (без `tests.yml`) — GitHub Actions такой файл НЕ видит, поэтому первые прогоны не запускались. Исправлено: blob удалён из git (`git rm --cached`), создан корректный `.github/workflows/tests.yml` (то же содержимое), commit `355d878` запушен — push запустил первый реальный CI-прогон.
+  2. **Локальная верификация офлайн-набора:** офлайн unit/integration-подмножество (16 key-файлов, вкл. `test_ui_section21.py`) — **249 passed, 5 skipped**, зелёное локально.
+  3. **Collection verified:** полный `tests/` собирается чисто — **1182 теста, 0 collection errors** (collection fix через conftest работает).
+  4. `gh` не авторизован (`gh auth login` не выполнен); GitHub API недоступен без auth (rate limit) — статус прогона проверять через web-интерфейс Actions.
+- **Pending:** (а) проверить результат CI-прогона `355d878` на github.com/Ovladimirovich/comfyui-agent → Actions; (б) при падениях в job `unit` — починить по логу (известные pre-existing: 9 падений в `test_ui_m12.py`/`test_ui_cancel_assets_m9b.py`); (в) `gh auth login` для локального просмотра CI-статуса; (г) по команде автора — Этап 2 (§21 API endpoints).
+- **Session boundary:** CI-фикс завершён → START NEW SESSION для починки UI-тестов по CI-логу (Этап 1) или §21-эндпоинтов (Этап 2, по команде автора).
 
 ## ТЕКУЩЕЕ СОСТОЯНИЕ — предыдущее (AD-48, 2026-09-14)
 
