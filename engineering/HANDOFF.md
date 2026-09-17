@@ -16,6 +16,96 @@ ARCHITECTURAL DECISIONS
 NEXT RECOMMENDED TASK
 ```
 
+## ТЕКУЩЕЕ СОСТОЯНИЕ — M19.3 chain_step SSE-разрыв починен (2026-09-17)
+
+- **M19.3 — РЕАЛИЗОВАН:** исправлен разрыв вайринга chain_step событий в SSE-поток.
+  - **Проблема:** `ConversationAgent.turn()` не передавал `on_chain_step` в `_execute_chain` → события `chain_step` (M19.3) не доходили до SSE-стрима, хотя inline UI уже подписан на них (ui.py:577).
+  - **Фикс:** добавлен `on_chain_step=on_chain_step,` в вызов `_execute_chain` (app/conversation.py:232).
+  - **Дополнительно:** в `_emit_step` добавлено `"total_steps": len(subtasks)` (ui.py:578) для UI-отображения прогресса цепочек.
+  - **Тесты:** `tests/test_chain_step_events.py` — unit-тест (проброс turn→chain) + интеграционный тест (run_turn→agent.turn→stream.push→wait_next).
+  - **Безопасность:** SAFE CHANGE — существующий контракт M19.3, никаких новых инвариантов.
+- **FILES CHANGED:** `app/conversation.py` (+1 строка), `tests/test_chain_step_events.py` (новый, 188 строк), `engineering/CHANGELOG.md`, `engineering/HANDOFF.md`, `tasks/ACTIVE.md`.
+- **TESTS:** `tests/test_chain_step_events.py` — 2 passed (unit + integration); регрессия: `tests/test_ui_section21.py` 11 passed + `tests/test_progress.py` 12 passed + `tests/test_m25_b1_b2_integration.py` 15 passed.
+- **KNOWN ISSUES:** нет (разрыв был единственным).
+- **OPEN QUESTIONS:** (1) следующий этап по команде автора: F3 Task & Plan (TaskCard+PlanSteps поверх chain_step) или D-1A (`agent_message`+`dialog_state`) approval shape; (2) регрессия legacy inline UI — требует проверки.
+- **ARCHITECTURAL DECISIONS:** M19.3 — SAFE CHANGE (проброс существующего callback, без новых контрактов); D-1A — направление, требует approval shape.
+- **NEXT RECOMMENDED TASK:** по команде автора — F3 Task & Plan или D-1A approval shape.
+
+---
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Frontend Agent v1: F2 Shell + Navigation и D-9A РЕАЛИЗОВАНЫ (2026-09-17)
+
+- **F2 — ИМПЛЕМЕНТИРОВАН и ПОДТВЕРЖДЁН** (ROADMAP §I, DoD §J): `App.tsx` разбит на Shell + зоны без изменения поведения (SSE-контракты same).
+  - Композиция: `components/Shell/{Sidebar,StatusBar,ZoneHeader}`, `components/Conversation/{ConversationZone,Composer,MessageList,MessageBubble,DialogStateBadge}`, `components/System/SystemZone`, `components/common/{EmptyState,ErrorBoundary}`; `src/zones.ts` (9 зон, roadmap §E), `src/lib/format.ts`; навигация hash-based (`zoneFromHash`, без react-router), ErrorBoundary в `main.tsx`, стили подключены через `src/styles/app.css`.
+  - Vite `base: "/app/"` + dev-proxy к 127.0.0.1:8189 (`/turn,/events,/api,/asset`) — SPA работает и в dev, и из backend.
+  - **Browser-смоук на реальном backend** (`python -m app.ui`, :8189, без живого ComfyUI): `/app` → title "ComfyUI Agent UI", sidebar 9 зон, Capabilities = 8 REAL id (`audio.generate`…`video.image_to_video`), "SSE: connected", StatusBar "cpu · 31.93 GB VRAM" (реальный `/api/runtime`, fail-open AD-45); клик "System" → URL `/app#/system`, SystemZone рендерит session/snapshot/runtime; консоль чистая (0 ошибок после добавления `data:,`-favicon); legacy `/` — inline M9 UI "ComfyUI Agent — M9 UI" не тронут.
+- **D-9A — РЕАЛИЗОВАН** (направление принято, ROADMAP §K.6): `app/ui.py` отдаёт собранный `agent_ui/dist` на `/app` (GET `/app`, `/app/`, `/app/assets/*`, SPA-fallback для путей без расширения → корневой index.html; confinement через realpath внутри dist; отсутствие dist/файла → честный 404 «ui dist not built»/«not found»). Legacy `/` сохранён. Constant seam: `AGENT_UI_DIST` env (override для тестов/деплоя).
+- **FILES CHANGED (этот блок):** `agent_ui/src/App.tsx` (split, verified), `agent_ui/src/main.tsx` (ErrorBoundary+CSS), `agent_ui/index.html` (убраны BOGUS-дубли CSS-ссылок, `data:,`-favicon), `agent_ui/src/lib/__tests__/format.test.ts` (new), `app/ui.py` (`_ui_dist_dir`, `_make_handler(ui_dist_dir)`, роут `/app`, `_serve_app_dist`, `_serve_static_file`), `tests/test_ui_app_dist.py` (new, 5 тестов). Прежние правки F2 (компоненты, zones, format, vite.config, styles) — из предыдущей сессии.
+- **TESTS:** backend — `test_ui_app_dist.py` 5 passed + `test_ui_section21.py` 11 passed; UI-регресс `m9+cancel_assets_m9b+m12+feedback_http` 23 passed / 4 skipped; frontend — `node --test` **24 passed** (8 новых format/zones + 16 прежних sse/graph/api); `npm run build` (tsc -b + vite) зелёный.
+- **KNOWN ISSUES:** `comfyui_version: UNKNOWN` в SystemZone при недоступном `/object_info` (honest fail-open, не баг); live-отмена/гранулярный progress — этапы F4/D-5A.
+- **OPEN QUESTIONS:** (1) следующий этап Frontend Agent v1 по команде автора (кандидаты: **F3 Task & Plan** — TaskCard+PlanSteps поверх `chain_step`; F4 Live Execution при утверждении D-5A; F5 Results & Assets; либо D-1A/D-2 approvals); (2) approval shapes D-1A (`agent_message`+`dialog_state` в `run_turn`), D-2 (`/api/history`).
+- **ARCHITECTURAL DECISIONS:** F2 — SAFE CHANGE (рефакторинг UI без изменения контрактов,apac дисциплина сохранена); D-9A — принято (без Node в runtime, legacy сохранён). НОВЫХ контрактов нет.
+- **NEXT RECOMMENDED TASK:** по явной команде автора — F3 или утверждение D-1A/D-5A/D-2 (см. OPEN QUESTIONS 1). До команды — новых слоёв/эндпоинтов не начинать. NEW SESSION при переходе к следующему этапу.
+
+---
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Frontend Agent v1: F1 §21 endpoints РЕАЛИЗОВАНЫ (2026-09-17)
+
+- **F1 — ВЫПОЛНЕН (по команде автора, ROADMAP P.1; верификация `docs/FRONTEND_AGENT_V1_F1_VERIFICATION.md`):**
+  1. `app/ui.py` (ComfyUIServer): `capabilities()` — read-only проекция `Agent.capabilities()`; `workflows_list()` — каталог `WorkflowRegistry.workflows` (id/version/capability/provider/backend/status+lifecycle/declared_only/required_models/required_custom_nodes/priority/source; **НЕ** M28-provenance); `runtime_info()` — `discover_runtime(client)` через **единый** AD-48-транспорт (fail-open `{}`); `cancel_job(prompt_id)` — честный D-5A-контракт: неизвестный → None (404), известный терминальный → факт state без фиктивной записи CANCELLED.
+  2. `app/ui.py` (Handler): маршруты `GET /api/capabilities`, `GET /api/workflows`, `GET /api/runtime`, `POST /api/jobs/{id}/cancel` (`_handle_api_cancel`). Новых registry/execution path/хранилищ нет.
+  3. `app/knowledge/core.py`: публичный accessor `KnowledgeCore.runtime_client` (рекомендация §2.3 верификации) — `/api/runtime` переиспользует существующий ComfyClient, второй транспорт не создаётся.
+  4. `tests/test_ui_section21.py`: сняты DRAFT-скипы (3 §21-теста → зелёные), добавлены `test_api_runtime_live` (accelerator CPU, vram_gb 8.0 из AD-48-транспорта) и `test_api_cancel_already_finished`/`test_api_cancel_failed_job` (запись не мутируется). Удалены `_draft_skip`, `_SECTION21_DRAFT_REASON`, неиспользуемый `import pytest`.
+- **FILES CHANGED:** `app/ui.py`, `app/knowledge/core.py`, `tests/test_ui_section21.py`, `engineering/CHANGELOG.md`, `engineering/HANDOFF.md`, `tasks/ACTIVE.md`, `docs/FRONTEND_AGENT_V1_F1_VERIFICATION.md` (статус-апдейт).
+- **TESTS:** `tests/test_ui_section21.py` — **11 passed**; UI/backend-регресс (m9, cancel_assets_m9b, feedback_http, progress, m17_user_feedback, knowledge_wiring_ui, knowledge_core) — **83 passed / 4 skipped**; коллекция `tests/` — **1270, 0 collection errors**; полный offline-прогон — **1126 passed / 142 skipped / 2 failed** (оба pre-existing/environment, вне F1: `test_comfy_cli_adapter` — требуется comfy-cli; `test_runtime_validator` — тайминг `execution_time_ms=0.0` на быстрых фейк-нодах).
+- **KNOWN ISSUES:** live-отмена текущего графа (настоящий `WorkflowEngine.cancel`/`ExecutionChain.cancel` interrupt) не реализована — контракт `cancel_job` зафиксирован (возвращает факт терминального state), live-tracking → этап D-5A/F4. Pre-existing live-E2E (3) вне scope — без изменений.
+- **OPEN QUESTIONS:** (1) какой следующий этап Frontend Agent v1 выбирает автор (кандидаты: F2 — отображение §21 в `agent_ui` (UI-2/UI-3); D-1A — `agent_message`/`dialog_state` в `run_turn`; D-2 — approval shape `/api/history` при F6); (2) durability `ExecutionHistory` (persist_path) — отдельный approval при F6.
+- **ARCHITECTURAL DECISIONS:** D-1A/D-5A/D-9A — приняты как направление; D-2 — направление, требует shape-approval. Roadmap — DRAFT. F1 — SAFE CHANGE (проекции существующих Core-компонентов, без новых инвариантов).
+- **NEXT RECOMMENDED TASK:** по явной команде автора — следующий этап ROADMAP P (см. OPEN QUESTIONS 1). До команды — реализацию новых эндпоинтов/слоёв НЕ начинать.
+
+---
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Решения автора зафиксированы: M29 FROZEN, Canvas visibility подтверждён, Вариант 0 — база (2026-09-17)
+
+- **M29 = ACCEPTED / FROZEN.** Не открывать M29 заново. Evidence (закрытый BLOCKER item 10/14): real E2E `test_m29_real_e2e_discover_validate_and_execute` на живом ComfyUI 0.34.5 → PASS; AD `M29-ordering` (shortest-first layered BFS) в `engineering/DECISION_LOG.md`; discovery/bridge/m29 offline = 85 passed. OPEN QUESTION (1) из нижнего блока M29 Ordering — закрыта авторским решением.
+- **Canvas visibility — CONFIRMED (лайв, ComfyUI Desktop 0.34.5):** `docs/AUDIT_COMFYUI_CANVAS_VISIBILITY_2026-09-17.md` принят. Agent выполняет **API-format** граф через `POST /prompt`; ComfyUI сохраняет граф в Job/History; штатный frontend умеет `GET /api/jobs/{id}` → `workflow.prompt` (API-format) → parser API→UI → `loadGraphData` → canvas («Открыть как workflow» в Queue/History). **Вывод: Agent workflow реально существует и исполняется корректно; проблема — в UX-переходе Agent↔ComfyUI, а не в execution architecture.**
+- **НЕ реализовывать сейчас:** собственный workflow editor; собственный execution engine; JS extension; WS canvas-control; новый storage layer; API «показать workflow в открытом canvas»; отдельная архитектура для canvas. **Вариант 2 = отдельный будущий AD, не входит в текущий этап.**
+- **Вариант 0 — текущая база:** использовать штатный механизм ComfyUI. Agent UI должен давать пользователю понятный путь: `Agent request → execution/job → result → runtime graph → соответствующий ComfyUI job → открыть этот workflow в штатном ComfyUI frontend`. Простого `window.open(:8188)` НЕДОСТАТОЧНО: пользователю нужно понимать, какой именно job открыть и как попасть к его workflow.
+- **Полный Frontend Roadmap обязан явно включить сценарий** «Agent → выполненный workflow → открыть/исследовать в ComfyUI» и определить: где действие; как идентифицируется job; как UI связывает Agent turn с ComfyUI job; как показывается runtime graph; как пользователь переходит к ComfyUI History/Queue; что при job уже завершён; что после перезапуска ComfyUI; что если job больше недоступен. **НЕ предполагать deep-link** (аудит: штатного URL/deep-link для произвольного локального canvas workflow нет).
+- **Следующая большая работа:** FULL FRONTEND AGENT v1 AUDIT + IMPLEMENTATION ROADMAP — единый целостный roadmap от текущего состояния до полноценного Frontend Agent v1 (НЕ набор микрозадач). Входные данные: текущий backend; существующий `agent_ui`; UI-1/UI-2/UI-3; S1–S12; M27; M28; M29; AD-48 runtime graph; streaming; Knowledge; Workflow/Provenance; History; ComfyUI canvas visibility audit.
+- **FILES CHANGED:** этот HANDOFF; `docs/AUDIT_COMFYUI_CANVAS_VISIBILITY_2026-09-17.md` (new, аудит). Никакого нового frontend-кода/документации. Кодова arch: без изменений.
+- **TESTS:** не запускались (no E2E по команде). Baseline (зафиксирован ранее): discovery/bridge/m29 offline = 85 passed; полный suite offline = 1152 passed / 107 skipped / 3 failed (pre-existing live-E2E вне M29); real E2E M29 = PASS.
+- **KNOWN ISSUES:** 3 pre-existing live-E2E (вне M29, вне scope roadmap): inpaint `/object_info` timeout; `test_ui_real_e2e` ×2 progress events отсутствуют. История сервера ComfyUI — in-memory (после рестарта `/api/jobs/{id}` для старых джобов недоступен) — учесть в roadmap сценарии «job unavailable / после рестарта».
+- **OPEN QUESTIONS:** (1) где именно разместить действие «Открыть в ComfyUI» в будущем Agent UI — решается в рамках Frontend Roadmap; (2) связывание Agent turn ↔ ComfyUI job (job_id в lifecycle/Job агента) — часть roadmap; (3) варианты закрепления постоянного входа (UI-format workflow-файл, Вариант 1) — отложены, не в текущий этап.
+- **ARCHITECTURAL DECISIONS (зафиксированы автором):** M29 = ACCEPTED/FROZEN; Canvas bridge A→B = штатный Jobs API + «Open as workflow» (Вариант 0 — база); Variant 1/2 = отложены (V2 — будущий AD); новый canvas audit — входной документ Frontend Roadmap.
+- **NEXT RECOMMENDED TASK:** START NEW SESSION → **FULL FRONTEND AGENT v1 AUDIT + IMPLEMENTATION ROADMAP** (см. выше; начиная с `docs/AUDIT_COMFYUI_CANVAS_VISIBILITY_2026-09-17.md` как одного из входных документов). До утверждения roadmap — никакой реализации (Вариант 0/1/2) и никаких новых E2E.
+
+---
+
+## ТЕКУЩЕЕ СОСТОЯНИЕ — M29 Discovery Ordering ✅ BLOCKER 10/14 CLOSED (2026-09-17)
+
+- **❌ BLOCKER (item 10/14) ЗАКРЫТ:** внедрён shortest-first (breadth-by-path-length). `enumerate_paths`/`_discover_from_nodes` → единый `_enumerate_layered` (layered BFS): все пути длины 1 edge (2 nodes) записываются до длины 2/3/…; внутри уровня: executable first (0 unresolved) → меньше unresolved/unsafe → стабильный schema insertion order (из `/object_info`, НЕ лексикографический). `max_paths` — только число возвращаемых кандидатов; `max_paths_per_head` — по уровням (head без бюджета перестаёт расширяться, отсекается только длинный хвост).
+- **Real E2E (живой ComfyUI 127.0.0.1:8188):** `test_m29_real_e2e_discover_validate_and_execute` → **PASS** (~107s; discover → S6 → advisory → `execute_discovered_workflow` → Job SUCCESS). Свойство «короткий исполнимый путь сначала» выполняется на живых схемах: `PIG→SaveImage` (2-node) — первый executable кандидат.
+- **Централизация (НЕ дублирование):** `MEDIA_OR_GRAPH_TYPES`, `_NoDefault`, `_resolve_scalar_default`, `_structural_executable`, `_dependency_count` — единый источник в `app/knowledge/discovery.py`; `discovery_bridge.py` импортирует их; локальные дубли (`_MEDIA_OR_GRAPH_TYPES`, `_NoDefault`, `_resolve_scalar_default`) удалены.
+- **TESTS:** discovery/bridge/m29 offline = **85 passed**; полный suite (offline) = **1152 passed / 107 skipped / 3 failed** (3 — pre-existing live-E2E, НЕ discovery: `test_real_inpaint_e2e` `/object_info` timeout — ComfyUI медленный; `test_ui_real_e2e` ×2 — progress events отсутствуют в SSE). Полный suite с live ComfyUI = 1152+1 passed (real E2E зелёный).
+- **FILES CHANGED:** `app/knowledge/discovery.py` (shortest-first + централизованные хелперы), `app/knowledge/discovery_bridge.py` (импорт централизованных, чистый ruff), `tests/test_m29_gap_closure.py` (test-only: stale import `app.comfy.provider` → `app.provider.comfyui`; ruff pre-existing unused-imports оставлены вне scope), `engineering/DECISION_LOG.md` (AD M29-ordering), `engineering/CHANGELOG.md`, `tasks/ACTIVE.md` (этот HANDOFF).
+- **OPEN QUESTIONS:** (1) официальный ACCEPTED/FROZEN для M29 — по команде автора (real E2E зелёный, AD M29-ordering IMPLEMENTED); (2) pre-existing live-E2E вне M29: inpaint `/object_info` timeout, `test_ui_real_e2e` progress events; (3) всё ещё открыты §7 (M29→ExperienceStore provenance) и §8 (повторный `agent.prepare` после SUCCESS).
+- **NEXT RECOMMENDED TASK:** официальное объявление M29 COMPLETE/FROZEN по команде автора; затем закрыть test gaps §7/§8 (см. `docs/AUDIT_M29_GAP_CLOSURE_2026-09-16.md`).
+
+- **M29.** Замкнута цепочка `candidate → S6 gate → register → ExecutionPlan → WorkflowEngine → Job SUCCESS`.
+- **REALIZED:**
+  - **`app/knowledge/discovery_bridge.py`** (new): `build_executable_graph` (API-format граф из DiscoveredWorkflow, 1-based node ids, defaults из FieldSpec, None при unwired media/GRAPH или unknown node), `resolve_capability` (IMAGE→image.generate / VIDEO→video.generate / AUDIO→audio.generate / fallback custom.execute), `candidate_gate` (S6-стиль: needs_knowledge, unknown_node, forbidden, requires_confirmation [снимается `confirm=True`], not_executable, cost_not_free, no_comfy_client), `derive_manifest_and_workflow`, `register_discovered_workflow` (write manifest.json + workflow.json → load_workflow → registry.register), `s6_validate`, `execute_discovered`.
+  - **`WorkflowRegistry.register(workflow)`** — append/replace по (id, version) (`app/registry/registry.py`).
+  - **Agent**: `register_discovered_workflow()` + `execute_discovered_workflow()` (gate → S6 → register → ExecutionPlan → engine.execute) (`app/agent.py`).
+  - **`data/runtime_workflows/`** добавлен в `.gitignore`.
+- **Confirm semantics:** `confirm=True` (явная команда пользователя) снимает `requires_confirmation` отказ для custom/unknown нод; `FORBIDDEN` — жёсткое «нет» в любом случае. Refusal (gate/S6-failure) НЕ пишет validated/claims (BLOCK, как S6).
+- **TESTS:** `tests/test_m29_gap_closure.py` — **26 passed, 1 skipped** (Real E2E skip при недоступном ComfyUI). Компоненты: unit (graph build/defaults, capability mapping, gate predicates, registry add/replace), файловая запись+roundtrip через load_workflow (status=VALIDATED), integration fake-полной цепи (FakeProvider + mock RuntimeValidator → Job SUCCESS с output asset), Agent-методы (register: файлы+registry; execute: SUCCESS). Регрессия: `test_m29_discovery.py` + `test_agent.py` + `test_agent_runtime_validation.py` + `test_m29_gap_closure.py` → **57 passed, 1 skipped**.
+- **FILES CHANGED:** `app/knowledge/discovery_bridge.py` (new), `app/registry/registry.py`, `app/agent.py`, `.gitignore`, `tests/test_m29_gap_closure.py` (new).
+- **KNOWN ISSUES:** (a) Real E2E `test_m29_real_e2e_discover_register_execute` — требует живого ComfyUI, skip при недоступности; (b) pre-existing вне scope: m11 collection; real-E2E на этой машине HTTP 400 `/prompt`; s4_full/s4_real `PlanContext(validated_nodes=...)`; (c) `data/runtime_workflows/` — workspace-артефакт, gitignored.
+- **OPEN QUESTIONS:** помечать M29 COMPLETE/FROZEN официально? (автор: см. DECISION_LOG entry). Real E2E прогон при живом ComfyUI.
+- **ARCHITECTURAL DECISIONS для author review:** (1) `confirm=True` блокирует `requires_confirmation`, не трогая `FORBIDDEN`; (2) runtime_dir по умолчанию `app/data/runtime_workflows/` — gitignored; (3) manifest `requirements={"accelerator": "any"}` + `priority=-1` → discovered workflow AVAILABLE offline, кураторские приоритетны. Все три — в рамках утверждённых SAFE CHANGE, НЕ меняют инварианты (S6 gate остаётся требованием: без успешного `validate_runtime` регистрации нет).
+- **NEXT RECOMMENDED TASK:** (а) прогон Real E2E на живой ComfyUI и фикс выявленных; (б) официальное снятие M29 из ACTIVE → COMPLETED (по команде автора); (в) UI-слой для discovered registration (`/api/discover/register`, `/api/discover/execute`) — читать AGENT_UI_IMPLEMENTATION_PLAN (отдельный этап).
+
 ## ТЕКУЩЕЕ СОСТОЯНИЕ — Категория 3: фикстуры AD-18 ✅ ВЫПОЛНЕНО (2026-09-15, план автора из 13 шагов)
 
 - **План выполнен.** `tests/test_planner_context.py`, `tests/test_progress.py`, `tests/test_prompt_builder_integration_m11.py` переписаны на канонические `FakeClient`/`FakeProvider` (шаблон `tests/test_agent.py`); `_patch_runtime` применён к тестам 4,5,6,8,10; тест 11 `test_progress.py` переведён на канонический `_FakeProvider()` (шаг 8).

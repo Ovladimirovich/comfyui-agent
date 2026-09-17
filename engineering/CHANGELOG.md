@@ -1,5 +1,84 @@
 # CHANGELOG.md
 
+## 2026-09-17 — M19.3 chain_step SSE-разрыв починен
+
+### ✅ Реализовано
+- **M19.3: исправлен разрыв вайринга chain_step событий в SSE-потоке**
+  - Добавлен проброс `on_chain_step` из `turn()` в `_execute_chain` (app/conversation.py:232)
+  - Добавлено поле `total_steps` в события `chain_step` для UI-прогресса
+  - Unit-тест: проверка проброса turn→chain (`tests/test_chain_step_events.py`)
+  - Интеграционный тест: проверка run_turn→agent.turn→stream.push→wait_next
+- **Безопасность:** SAFE CHANGE — существующий контракт M19.3, никаких новых инвариантов
+
+### 📁 Файлы
+- `app/conversation.py` — +1 строка (on_chain_step проброс)
+- `tests/test_chain_step_events.py` — новый тест-файл (188 строк, 2 теста)
+- `engineering/CHANGELOG.md`, `engineering/HANDOFF.md`, `tasks/ACTIVE.md` — обновление
+
+### 🧪 Тесты
+- `tests/test_chain_step_events.py` — 2 passed
+- Регрессия: `test_ui_section21.py` 11 passed, `test_progress.py` 12 passed, `test_m25_b1_b2_integration.py` 15 passed
+
+---
+## 2026-09-17 — Frontend Agent v1: F2 Shell + Navigation и D-9A (SPA на /app)
+
+- **Milestone:** Frontend Agent v1 (roadmap `docs/FRONTEND_AGENT_V1_ROADMAP.md`) — F2 (DoD §J: SPA из backend `/app` и в dev; навигация между зонами; нет регресса SSE/recovery) + D-9A (ROADMAP §K.6, принято).
+- **Changes:**
+  1. **F2 (frontend):** `App.tsx` разбит на Shell + зоны без изменения поведения. Состав: `components/Shell/{Sidebar,StatusBar,ZoneHeader}`, `components/Conversation/{ConversationZone,Composer,MessageList,MessageBubble,DialogStateBadge}`, `components/System/SystemZone`, `components/common/{EmptyState,ErrorBoundary}`; `src/zones.ts` (9 зон roadmap §E + hash-навигация `zoneFromHash`); `src/lib/format.ts` (makeId/connectionLabel/zonePhaseHint/STATE_COLOR); `main.tsx` — ErrorBoundary + импорт `styles/app.css`; `index.html` — вычищены BOGUS-дубли CSS-ссылок, добавлен `data:,`-favicon (0 console errors). Vite `base: "/app/"` + dev-proxy на 127.0.0.1:8189 (`/turn`,`/events`,`/api`,`/asset`).
+  2. **D-9A (backend):** `app/ui.py` — `_ui_dist_dir()` (seam `AGENT_UI_DIST` env, дефолт `agent_ui/dist`), `_make_handler(factory, ui_dist_dir=None)`, роут `GET /app`, `/app/*` → `_serve_app_dist` + `_serve_static_file`: точный файл / index.html директории / SPA-fallback для путей без расширения; confinement realpath внутри dist (traversal → 404); отсутствие dist / файла → честный 404. Legacy `/` (inline M9 UI) НЕ тронут.
+  3. **Тесты:** `tests/test_ui_app_dist.py` (new, 5: index+assets+SPA-fallback, missing→404, traversal→404, not-built→404, legacy root). `agent_ui/src/lib/__tests__/format.test.ts` (new, 8: makeId/shortId/connectionLabel/zonePhaseHint/STATE_COLOR/ZONES/zoneFromHash).
+- **Tests:** backend — `test_ui_app_dist.py` 5 passed + `test_ui_section21.py` 11 passed; UI-регресс (m9, cancel_assets_m9b, m12, feedback_http) 23 passed / 4 skipped; frontend — `node --test` 24 passed, `npm run build` (tsc -b + vite) зелёный. **Browser-смоук на реальном backend** (`python -m app.ui` :8189): `/app` = F2 Shell с реальными данными (title, 9 зон, capabilities = 8 id, "SSE: connected", runtime cpu/31.93 GB), клик "System" → `/app#/system` + SystemZone, консоль чистая; `/` = legacy inline UI сохранён.
+- **Known limitations:** `comfyui_version: UNKNOWN` при недоступном `/object_info` — honest fail-open (AD-45), не баг; live-отмена/гранулярный progress — F4/D-5A; D-2 durability — отдельный approval.
+- **Docs:** `engineering/HANDOFF.md` (верхний блок 2026-09-17), `tasks/ACTIVE.md`, `engineering/CHANGELOG.md`.
+
+## 2026-09-17 — Frontend Agent v1: F1 §21 endpoints реализованы (capabilities/workflows/runtime/cancel)
+
+- **Milestone:** Frontend Agent v1 (roadmap `docs/FRONTEND_AGENT_V1_ROADMAP.md`, раздел P) — F1 по верификации `docs/FRONTEND_AGENT_V1_F1_VERIFICATION.md` (APPROVED автором).
+- **Changes:**
+  1. `app/ui.py` (ComfyUIServer): `capabilities()` — read-only проекция `Agent.capabilities()`; `workflows_list()` — каталог `WorkflowRegistry.workflows` (id/version/capability/provider/backend/status+lifecycle/declared_only/required_models/required_custom_nodes/priority/source; **НЕ** M28-provenance); `runtime_info()` — `discover_runtime(client)` через **единый** AD-48-транспорт, fail-open `{}`; `cancel_job(prompt_id)` — честный контракт D-5A: неизвестный id → None (404), известный терминальный → фактическое state БЕЗ фиктивной записи CANCELLED.
+  2. `app/ui.py` (Handler): маршруты `GET /api/capabilities`, `GET /api/workflows`, `GET /api/runtime`, `POST /api/jobs/{id}/cancel` (+ `_handle_api_cancel`). Никаких вторых registry/execution path/новых хранилищ.
+  3. `app/knowledge/core.py`: публичный accessor `KnowledgeCore.runtime_client` (SAFE, рекомендация §2.3 верификации) — `/api/runtime` переиспользует существующий ComfyClient (AD-48 wiring), второй транспорт не создаётся.
+  4. `tests/test_ui_section21.py`: DRAFT-скипы сняты (три §21-теста переведены в зелёные), добавлены `test_api_runtime_live` (RuntimeInfo из AD-48-транспорта: accelerator CPU, vram_gb 8.0) и `test_api_cancel_already_finished` (+`test_api_cancel_failed_job` семантика; проверка, что запись не мутируется — `/api/jobs/{id}` остаётся SUCCESS/FAILED). Убран `_draft_skip`/`_SECTION21_DRAFT_REASON` и неиспользуемый `import pytest`.
+- **Tests:** `tests/test_ui_section21.py` — **11 passed**; UI/backend-регресс (m9, cancel_assets_m9b, feedback_http, progress, m17_user_feedback, knowledge_wiring_ui, knowledge_core) — **83 passed / 4 skipped**. Свежая коллекция `tests/` — **1270 тестов, 0 collection errors**. Полный offline-прогон — 1126 passed / 142 skipped / 2 failed (`test_comfy_cli_adapter` — требует comfy-cli; `test_runtime_validator` — тайминг `execution_time_ms=0.0` на быстрых фейк-нодах; оба pre-existing/environment, вне F1).
+- **Known limitations:** live-отмена текущего графа (WorkflowEngine.cancel/ExecutionChain.cancel настоящий interrupt) не реализована — контракт зафиксирован (`cancel_job` возвращает факт терминального state), live-tracking — этап D-5A/F4. D-2 (`/api/history`), durability ExecutionHistory — на отдельный approval.
+- **Docs:** `docs/FRONTEND_AGENT_V1_F1_VERIFICATION.md` (статус: верификация → реализовано), `tasks/ACTIVE.md`, `engineering/HANDOFF.md`.
+
+## 2026-09-17 — Frontend Agent v1: F0 baseline, fix `_handle_feedback`, верификация §21
+
+- **Milestone:** Frontend Agent v1 (roadmap `docs/FRONTEND_AGENT_V1_ROADMAP.md`, DRAFT) — F0 + production-fix.
+- **Changes:**
+  1. **Production-фикс `_handle_feedback`** (`app/ui.py`): восстановлен handler `POST /api/feedback` — валидация обязательных полей (session_id/attempt_id/rating → 400), запись через `factory.record_feedback`, HTTP-ответ (200 / `invalid feedback` 400 / `feedback failed` 500). Вычищен мёртвый хвост feedback-кода из `_handle_chat` (оставался после `return`).
+  2. **Регресс-тест** `tests/test_ui_feedback_http.py` — 5/5 PASSED (ok, missing rating 400, invalid rating 400, bad json 400, history отражает запись).
+  3. **F0 docs reconciliation:** `docs/AGENT_UI_IMPLEMENTATION_PLAN.md` (честный статус UI-1: реализованные/нереализованные §21), `docs/AGENT_UI_UI3_DESIGN.md` (S9 assets реализован; S12 cancel нет; §5.3), `docs/FRONTEND_AGENT_V1_ROADMAP.md` (раздел P: решения автора + верификация §21).
+  4. **Новый док:** `docs/FRONTEND_AGENT_V1_F1_VERIFICATION.md` — 4 целевых §21-эндпоинта = проекции существующих компонентов Core (`Agent.capabilities`, `WorkflowRegistry`, `discover_runtime`/AD-48 transport, `WorkflowEngine.cancel`/`ExecutionChain.cancel`), дублирования нет; D-1A в едином event-contract; D-2 анализ `/api/history` (gap: ExecutionHistory без persist_path).
+- **Tests:** `tests/test_ui_feedback_http.py` — 5 passed; UI-регресс (`test_ui_section21` + `test_ui_cancel_assets_m9b` + `test_progress` + `test_knowledge_wiring_ui` + `test_m17_user_feedback`) — **48 passed / 7 skipped**.
+- **Known limitations:** `/api/capabilities`, `/api/workflows` (list), `/api/runtime`, `POST /api/jobs/{id}/cancel` — НЕ реализованы (F1 ждёт команды автора). D-2 (`/api/history`) — нет approval; durability ExecutionHistory — открытый вопрос.
+- **Docs:** `docs/FRONTEND_AGENT_V1_F1_VERIFICATION.md`, ROADMAP §P, `tasks/ACTIVE.md`, `engineering/HANDOFF.md`.
+
+## 2026-09-17 — M29 Discovery Ordering: shortest-first (layered BFS)
+
+- **Milestone:** M29 — Autonomous Workflow Discovery (gap closure follow-up; закрыт BLOCKER item 10/14 аудита `docs/AUDIT_M29_GAP_CLOSURE_2026-09-16.md`).
+- **Changes:**
+  1. `app/knowledge/discovery.py`: `enumerate_paths`/`_discover_from_nodes` переведены на layered BFS shortest-first (`_enumerate_layered`) — все пути длины 1 edge записываются до длины 2/3/…; внутри уровня: executable first (0 unresolved) → меньше unresolved/unsafe → стабильный schema insertion order (НЕ лексикографический). `max_paths` ограничивает только возврат; `max_paths_per_head` — по уровням (head без бюджета не расширяется).
+  2. Централизация: `MEDIA_OR_GRAPH_TYPES`, `_NoDefault`, `_resolve_scalar_default`, `_structural_executable`, `_dependency_count` — единый источник в `discovery.py`; `discovery_bridge.py` импортирует их, локальные дубли удалены.
+  3. `tests/test_m29_gap_closure.py`: test-only фикс stale import (`app.comfy.provider` → `app.provider.comfyui`, маскировался ранним skip).
+- **Tests:** discovery/bridge/m29 offline = **85 passed**; полный suite (offline) = **1152 passed / 107 skipped / 3 failed** (3 — pre-existing live-E2E вне discovery: inpaint `/object_info` timeout, UI progress events отсутствуют). **Real E2E на живом ComfyUI = PASS** (`test_m29_real_e2e_discover_validate_and_execute`, ~107s).
+- **Known limitations:** 3 live-E2E падения (inpaint `/object_info` timeout; `test_ui_real_e2e` progress events) — pre-existing, не связаны с discovery (вне M29).
+- **Docs:** `engineering/DECISION_LOG.md` (AD M29-ordering), `engineering/HANDOFF.md`, `tasks/ACTIVE.md`.
+
+## 2026-09-16 — M29 Gap Closure (Discovery Bridge)
+
+- **Milestone:** M29 — Autonomous Workflow Discovery (gap closure, не milestone-level).
+- **Changes:**
+  1. Новый модуль `app/knowledge/discovery_bridge.py`: `build_executable_graph`, `resolve_capability`, `candidate_gate` (S6-стиль), `derive_manifest_and_workflow`, `register_discovered_workflow`, `execute_discovered`. 1-based node ids (inference frequency).
+  2. `WorkflowRegistry.register(workflow)` — append/replace по (id, version) с source (curated/discovered).
+  3. `Agent.register_discovered_workflow()` / `Agent.execute_discovered_workflow()` methods — use-case: runner по команде пользователя (confirm=True).
+  4. `.gitignore` — `data/runtime_workflows/` (workspace артефакты, не в git).
+  5. Тесты: `tests/test_m29_gap_closure.py` — 26 passed / 1 skipped (unit + integration + agent + real-E2E skip без ComfyUI).
+  6. Документация: `docs/M29_WORKFLOW_DISCOVERY.md` PARTIAL → GAP CLOSURE IMPLEMENTED; `engineering/HANDOFF.md` + `engineering/DECISION_LOG.md` (M29-gap ADR). `tasks/ACTIVE.md` — M29 с новым статусом.
+- **Tests:** 26 passed / 1 skipped; regression test_m29_discovery + test_agent + test_agent_runtime_validation = 57/1 skipped.
+- **Known limitations:** Real E2E `test_m29_real_e2e_discover_register_execute` — требует live ComfyUI 127.0.0.1:8188.
+
 Техническая история проекта. Не писать каждую изменённую строку.
 
 ## 2026-09-15 (часть 4) — Полный CI-лог получен (токен); расхождение «9 vs ~60+» зафиксировано
