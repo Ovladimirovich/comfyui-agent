@@ -16,6 +16,23 @@ ARCHITECTURAL DECISIONS
 NEXT RECOMMENDED TASK
 ```
 
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Frontend Agent v1: F3 Task & Plan РЕАЛИЗОВАН (2026-09-17)
+
+- **F3 — РЕАЛИЗОВАН** (ROADMAP §I, DoD §J): зона "Task & Plan" реализована поверх existing Planner/ExecutionChain.
+  - **Компоненты:** `components/Task/{TaskPlanZone,TaskCard,PlanSteps}`; CSS в `styles/app.css`.
+  - **Data flow:** SSE `chain_step` события → state `chainSteps`/`activeStepIndex`/`progressPct`; SSE `start` сбрасывает plan state; SSE `result/error` обновляют dialog_state; POST `/api/chat` сохраняет `userIntent`.
+  - **D-1A минимально:** поле `agent_message` из terminal result события (если backend шлёт); `dialog_state` уже стримится через status/result события.
+  - **Честность:** если backend не даёт chain_step — empty state; нет fake данных.
+  - **Browser smoke:** `/app#/task-plan` показывает зону; при отправке запроса через `/api/chat` chain_step события populate PlanSteps.
+- **FILES CHANGED:** `agent_ui/src/components/Task/{TaskPlanZone,TaskCard,PlanSteps}.tsx` (new), `agent_ui/src/styles/app.css` (+120 строк), `agent_ui/src/App.tsx` (+chain_step handler, task-plan zone render).
+- **TESTS:** backend — `test_chain_step_events.py` 2 passed + `test_ui_section21.py` 11 passed + `test_progress.py` 12 passed + `test_m25_b1_b2_integration.py` 15 passed + `test_ui_app_dist.py` 5 passed + `test_ui_feedback_http.py` 5 passed = **50 passed**; frontend — `node --test` 24 passed; `npm run build` зелёный.
+- **KNOWN ISSUES:** legacy `/` (inline UI) не тронут; M29 не изменён; D-2 (`/api/history`) не реализован; F4 (Live Execution) не начат.
+- **OPEN QUESTIONS:** (1) следующий этап по команде автора — F4 Live Execution (JobCard + cancel) или F5 Results & Assets; (2) D-1A полный shape требует решения автора (сейчас реализован минимум: `agent_message` из result события).
+- **ARCHITECTURAL DECISIONS:** F3 — SAFE CHANGE (добавление зоны поверх существующего SSE, без новых контрактов); D-1A partial — MINIMAL (только поля, которые уже есть в result event).
+- **NEXT RECOMMENDED TASK:** по команде автора — F4 Live Execution или утверждение полного D-1A shape. До команды — новых слоёв не начинать.
+
+---
+
 ## ТЕКУЩЕЕ СОСТОЯНИЕ — M19.3 chain_step SSE-разрыв починен (2026-09-17)
 
 - **M19.3 — РЕАЛИЗОВАН:** исправлен разрыв вайринга chain_step событий в SSE-поток.

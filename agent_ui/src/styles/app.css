@@ -1,0 +1,858 @@
+/* app.css — стили Shell + зоны (вынесены inline-стили из App.tsx, F2).
+ * Всё состояние — в tokens.css; здесь только компоновка/компоненты. */
+
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+/* ============================= Shell ============================= */
+
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+.shell__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px;
+  gap: 12px;
+}
+
+.shell__content {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ============================= Sidebar ============================= */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.sidebar__brand {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.sidebar__brand span {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.sidebar__section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin: 10px 0 4px;
+}
+
+.sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar__item {
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.sidebar__item:hover {
+  background: var(--bg-inset);
+  color: var(--text);
+}
+
+.sidebar__item--active {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.sidebar__item__phase {
+  display: block;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 1px;
+}
+
+/* Capabilities в Sidebar (ROADMAP §G: capabilities → Sidebar/Composer). */
+
+.caps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-y: auto;
+}
+
+.caps-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ============================= ZoneHeader ============================= */
+
+.zone-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 2px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zone-header__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.zone-header__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.zone-header__phase {
+  font-size: 11px;
+  color: var(--warning);
+}
+
+/* ============================= StatusBar ============================= */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.status-bar__chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot--open {
+  background: var(--success);
+}
+
+.status-dot--connecting,
+.status-dot--error {
+  background: var(--warning);
+}
+
+.status-dot--closed {
+  background: var(--cancelled);
+}
+
+/* ============================= Conversation zone ============================= */
+
+.conversation {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 16px;
+  align-items: start;
+}
+
+.conversation__main {
+  min-width: 0;
+}
+
+.dialog-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.dialog-state__value {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.message-list {
+  min-height: 360px;
+  max-height: 62vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg-panel);
+}
+
+.message-list__empty {
+  opacity: 0.5;
+}
+
+.message-list__busy {
+  font-size: 12px;
+  opacity: 0.7;
+  color: var(--text-muted);
+}
+
+.message {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.message--user {
+  align-items: flex-end;
+}
+
+.message--error .message__body {
+  border-color: var(--error);
+}
+
+.message__body {
+  max-width: 85%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  white-space: pre-wrap;
+}
+
+.message__body--user {
+  background: var(--user-bubble);
+}
+
+.message__body--error {
+  background: var(--error-bg);
+  border-color: var(--error);
+}
+
+.message__body--agent {
+  background: var(--bg-inset);
+}
+
+.message__meta {
+  font-size: 11px;
+  opacity: 0.75;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.message__meta--error {
+  color: var(--error);
+}
+
+.message__error-text {
+  font-size: 12px;
+  color: var(--error);
+  margin-top: 2px;
+}
+
+.progress-line {
+  width: 85%;
+  height: 5px;
+  margin-top: 3px;
+  background: #1a1e27;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-line__fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.message__assets {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Composer */
+
+.composer {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.composer__attach {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.composer__attach:has(input:disabled) {
+  cursor: default;
+}
+
+.composer__input {
+  flex: 1;
+  padding: 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-raid);
+  color: var(--text);
+}
+
+.composer__send {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.composer__send:disabled {
+  background: var(--accent-dim);
+  cursor: default;
+}
+
+.composer__send--busy {
+  background: var(--accent-dim);
+}
+
+.attach-preview {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  align-items: center;
+}
+
+.attach-preview__thumb {
+  max-width: 56px;
+  max-height: 40px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.attach-preview__remove {
+  margin-left: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: var(--bg-inset);
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Aside panels (Conversation zone): Capabilities/Job lifecycle перенесены
+ * Capabilities → Sidebar (ROADMAP §G); Job lifecycle остаётся здесь. */
+
+.aside {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aside__panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg-panel);
+}
+
+.aside__panel h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.job-lifecycle {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.btn-danger {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ============================= EmptyState / common ============================= */
+
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.empty-state__title {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.empty-state__phase {
+  font-size: 12px;
+  color: var(--warning);
+}
+
+.empty-state__body {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 24px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  background: var(--error-bg);
+  color: var(--text);
+  margin: 16px;
+}
+
+.error-boundary__detail {
+  font-size: 12px;
+  color: var(--error);
+  font-family: var(--mono);
+}
+
+.btn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ============================= Assets ============================= */
+
+.asset-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  background: var(--bg-panel);
+}
+
+.asset-card__img {
+  max-width: 180px;
+  max-height: 140px;
+  display: block;
+  border-radius: 4px;
+}
+
+.asset-card__fallback {
+  display: block;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.asset-card__fallback a {
+  color: var(--accent);
+}
+
+/* ============================= RuntimeGraph (read-only) ============================= */
+
+.rg {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  background: var(--bg-raid);
+}
+
+.rg__summary {
+  cursor: pointer;
+}
+
+.rg__body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rg__note {
+  color: var(--text-dim);
+}
+
+.rg__node-title {
+  color: var(--text);
+}
+
+.rg__node-meta {
+  opacity: 0.7;
+}
+
+.rg__node-inputs {
+  margin: 0;
+  padding-left: 16px;
+  opacity: 0.9;
+}
+
+/* ============================= System zone ============================= */
+
+.sys {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.sys__panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-panel);
+}
+
+.sys__panel h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.sys__row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.sys__key {
+  width: 160px;
+  color: var(--text-dim);
+  flex: none;
+}
+
+.sys__value {
+  font-family: var(--mono);
+  color: var(--text);
+  word-break: break-all;
+}
+
+/* ============================= Task & Plan zone (F3) ============================= */
+
+.task-plan-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-plan-zone__section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-panel);
+}
+
+.task-plan-zone__heading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-plan-zone__step-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.task-plan-zone__empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.task-plan-zone__agent-message {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border-radius: 6px;
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.task-plan-zone__agent-label {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.task-plan-zone__agent-text {
+  color: var(--text);
+}
+
+/* TaskCard */
+
+.task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-card__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.task-card__intent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-card__intent--empty {
+  opacity: 0.5;
+}
+
+.task-card__label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.task-card__value {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.task-card__meta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.task-card__capability,
+.task-card__job-id {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.task-card__error {
+  padding: 6px 8px;
+  background: var(--error-bg);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--error);
+  display: flex;
+  gap: 8px;
+}
+
+/* PlanSteps */
+
+.plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan-steps__empty {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.plan-steps__current {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.plan-steps__header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-steps__progress {
+  color: var(--accent);
+  font-family: var(--mono);
+}
+
+.plan-steps__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--bg-raid);
+}
+
+.plan-steps__item--active {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+}
+
+.plan-steps__item--completed .plan-steps__marker {
+  color: var(--success);
+}
+
+.plan-steps__item--failed .plan-steps__marker {
+  color: var(--error);
+}
+
+.plan-steps__item--pending .plan-steps__marker {
+  opacity: 0.5;
+}
+
+.plan-steps__marker {
+  width: 16px;
+  text-align: center;
+  font-weight: 600;
+  flex: none;
+}
+
+.plan-steps__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-steps__index {
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.plan-steps__capability {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.plan-steps__outputs {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex: none;
+}
+
+.plan-steps__pending {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 0;
+}

@@ -1,5 +1,39 @@
 # CHANGELOG.md
 
+## 2026-09-17 — F3 Task & Plan РЕАЛИЗОВАН
+
+### ✅ Реализовано
+- **F3: зона "Task & Plan" поверх existing Planner/ExecutionChain**
+  - Компоненты: `TaskPlanZone`, `TaskCard`, `PlanSteps`
+  - Data flow: SSE `chain_step` → `chainSteps` state; `total_steps` из M19.3; progress из SSE `progress`
+  - D-1A partial: `agent_message` из terminal result события (если есть)
+  - Честный empty state если backend не предоставляет chain данные
+  - CSS стили добавлены в `app.css`
+
+### 📁 Файлы
+- `agent_ui/src/components/Task/TaskPlanZone.tsx` — новый (92 строки)
+- `agent_ui/src/components/Task/TaskCard.tsx` — новый (66 строк)
+- `agent_ui/src/components/Task/PlanSteps.tsx` — новый (89 строк)
+- `agent_ui/src/styles/app.css` — +120 строк (task-plan-zone styles)
+- `agent_ui/src/App.tsx` — +chain_step handler, task-plan zone render
+
+### 🧪 Тесты
+- Backend: `test_chain_step_events.py` 2 passed
+- Regression: `test_ui_section21.py` 11 passed, `test_progress.py` 12 passed, `test_m25_b1_b2_integration.py` 15 passed, `test_ui_app_dist.py` 5 passed, `test_ui_feedback_http.py` 5 passed = **50 passed total**
+- Frontend: `node --test` 24 passed
+- Build: `npm run build` зелёный (166 KB JS, 10.9 KB CSS)
+
+### 🌐 Browser Smoke
+- `/app#/task-plan` — зона доступна, навигация работает
+- При отправке запроса через `/api/chat` → chain_step события populate PlanSteps
+- Демонстрация: intent → plan steps с capability/outputs → результат
+
+### ⚠️ Границы
+- **НЕ сделано:** M29 (discovery), D-2 (/api/history), F4 (live execution/cancel), полноценный D-1A (только agent_message из result)
+- Legacy `/` (inline UI) — не тронут
+- Файлы `app/conversation.py`, `app/ui.py` production — без изменений (только frontend)
+
+---
 ## 2026-09-17 — M19.3 chain_step SSE-разрыв починен
 
 ### ✅ Реализовано
