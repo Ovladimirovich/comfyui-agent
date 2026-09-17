@@ -25,7 +25,7 @@ def test_turn_passes_on_chain_step_to_execute_chain(tmp_path):
 
     # Мокаем _execute_chain чтобы он вызывал переданный on_chain_step
     def _mock_execute_chain(
-        self, session_id, subtasks, on_chain_step=None, **_kw
+        session_id, subtasks, on_chain_step=None, **_kw
     ):
         for i, subtask in enumerate(subtasks):
             if on_chain_step:
@@ -77,7 +77,7 @@ def test_run_turn_pushes_chain_step_events_to_stream(tmp_path):
 
     # Мокаем agent.turn чтобы он вызывал переданный on_chain_step
     def _mock_turn(
-        self, session_id, request, on_chain_step=None, **_kw
+        session_id, request, on_chain_step=None, **_kw
     ):
         if on_chain_step:
             on_chain_step({
@@ -115,13 +115,18 @@ def test_run_turn_pushes_chain_step_events_to_stream(tmp_path):
 
         # Читаем события через stream.wait_next
         stream = server.stream("s1")
-        ev1 = stream.wait_next(0, timeout=1)
-        ev2 = stream.wait_next(1, timeout=1)
+        # Пропускаем start, status и читаем chain_step события
+        events_found = []
+        idx = 0
+        while len(events_found) < 2:
+            ev = stream.wait_next(idx, timeout=1)
+            idx += 1
+            if ev and ev.get("type") == "chain_step":
+                events_found.append(ev)
 
         # Проверяем что события chain_step пришли с total_steps=2
-        assert ev1["type"] == "chain_step"
-        assert ev1["total_steps"] == 2
-        assert ev1["capability"] == "image.generate"
-        assert ev2["type"] == "chain_step"
-        assert ev2["total_steps"] == 2
-        assert ev2["capability"] == "image.upscale"
+        assert len(events_found) == 2
+        assert events_found[0]["total_steps"] == 2
+        assert events_found[0]["capability"] == "image.generate"
+        assert events_found[1]["total_steps"] == 2
+        assert events_found[1]["capability"] == "image.upscale"

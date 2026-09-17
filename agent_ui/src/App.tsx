@@ -25,6 +25,7 @@ import StatusBar from "./components/Shell/StatusBar";
 import ZoneHeader from "./components/Shell/ZoneHeader";
 import SystemZone from "./components/System/SystemZone";
 import TaskPlanZone from "./components/Task/TaskPlanZone";
+import ExecutionZone from "./components/Execution/ExecutionZone";
 import type { ChainStep } from "./components/Task/PlanSteps";
 
 export default function App() {
@@ -311,9 +312,12 @@ export default function App() {
               lastCapability={null} // TODO: из result event
               agentMessage={agentMessage}
             />
-          )}
-          {zone.id === "system" && <SystemZone sessionId={sessionId} connection={connection} runtimeInfo={runtimeInfo} snapshot={snapshot} />}
-          {zone.id !== "conversation" && zone.id !== "task-plan" && zone.id !== "system" && <EmptyState title={zone.label} phase={zone.phase} body={zone.description} />}
+)}
+            {zone.id === "execution" && (
+              <ExecutionZone sessionId={sessionId} />
+            )}
+            {zone.id === "system" && <SystemZone sessionId={sessionId} connection={connection} runtimeInfo={runtimeInfo} snapshot={snapshot} />}
+            {zone.id !== "conversation" && zone.id !== "task-plan" && zone.id !== "execution" && zone.id !== "system" && <EmptyState title={zone.label} phase={zone.phase} body={zone.description} />}
         </section>
         <StatusBar sessionId={sessionId} connection={connection} runtimeInfo={runtimeInfo} />
       </main>

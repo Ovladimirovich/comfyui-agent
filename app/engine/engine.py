@@ -226,6 +226,7 @@ class WorkflowEngine:
                 on_progress=None,
                 gateway=None,  # M21: optional ClusterGateway for dispatch tracking
                 history=None,  # M21: optional ExecutionHistory for dispatch persistence
+                on_start=None,  # F4: callback(prompt_id, job) после submit, до WS tracking
     ) -> Job:
         """Запустить execution. on_progress(value, max) — callback для WS progress events.
 
@@ -269,12 +270,19 @@ class WorkflowEngine:
             state=JobState.RUNNING,
             backend_execution_identity=provider.backend_id,  # M21: set backend identity
         )
+        # Workflow Observability: фиксируем РОВНО тот граф, который ушёл в /prompt
+        # (после подстановки params и _bind_models). deepcopy защищает от поздних мутаций.
+        job.runtime_graph = copy.deepcopy(prompt)
 
         # M21: Record dispatch to Gateway if provided
         if gateway is not None:
             gateway.record_dispatch(prompt_id, provider.backend_id)
         if history is not None:
             history.record_dispatch(prompt_id, provider.backend_id, provider.client.base_url)
+
+        # F4: D-5A — fire on_start callback после submit, до WS tracking
+        if on_start is not None:
+            on_start(prompt_id, job)
 
         # 5. трекинг через WebSocket (обязателен, треб. 6)
         lock = threading.Lock()

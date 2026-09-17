@@ -122,6 +122,37 @@ class ComfyUIServer:
         with self._lock:
             return self.streams.setdefault(session_id, SessionStream())
 
+    def job_status(self, prompt_id: str) -> Optional[dict]:
+        """GET /api/jobs/{id} — статус Job из ExecutionHistory (runtime evidence).
+
+        Детерминированный источник: ExecutionHistory.get_by_prompt_id() (M13).
+        None → caller отвечает 404. runtime_graph отдаётся только из памяти
+        (в JSONL не персистится на этом этапе, см. history.ExecutionRecord.to_dict).
+        """
+        history = getattr(self.agent, "execution_history", None)
+        if history is None:
+            return None
+        rec = history.get_by_prompt_id(prompt_id)
+        if rec is None:
+            return None
+        return {
+            "prompt_id": rec.prompt_id,
+            "capability": rec.capability,
+            "workflow_id": rec.workflow_id,
+            "workflow_version": rec.workflow_version,
+            "state": rec.state,
+            "attempt": rec.attempt,
+            "duration": rec.duration,
+            "error": rec.error_message,
+            "error_class": rec.error_class,
+            "output_assets": list(rec.output_assets or []),
+            "backend_execution_identity": rec.backend_execution_identity,
+            "chain_id": rec.chain_id,
+            "chain_step_index": rec.chain_step_index,
+            "params": dict(rec.params or {}),
+            "runtime_graph": rec.runtime_graph,
+        }
+
     def run_turn(
         self,
         session_id: str,
@@ -269,6 +300,32 @@ class ComfyUIServer:
         if not f["data"]:
             raise ValueError("empty file")
         return self.upload_asset(f["data"], f["filename"], f["content_type"])
+
+    def cancel_job(self, prompt_id: str) -> Optional[dict]:
+        """F1 §21: POST /api/jobs/{id}/cancel — реальный D-5A cancel (F4 реализация).
+
+        Семантика (D-5A реализовано в F4):
+        - неизвестный id → None → caller отвечает 404;
+        - известный активный execution → реальная отмена через WorkflowEngine/ExecutionChain;
+        - известный завершённый job → фактическое состояние из ExecutionHistory (не фейковый CANCELLED).
+        """
+        # F4: пробуем реальную отмену через активный execution
+        cancel_result = self.agent.cancel_execution(prompt_id)
+        if cancel_result is not None and "error" not in cancel_result:
+            # Реальная отмена удалась
+            return cancel_result
+
+        # FALLBACK: job не найден как активный execution (уже завершён)
+        status = self.job_status(prompt_id)
+        if status is None:
+            return None
+        return {
+            "id": prompt_id,
+            "cancelled": False,
+            "state": status["state"],
+            "workflow_id": status["workflow_id"],
+            "reason": "already_finished",
+        }
 
 
 def _parse_multipart(raw: bytes, boundary: str) -> list:

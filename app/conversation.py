@@ -24,6 +24,7 @@ from __future__ import annotations
 import time as _time
 import uuid as _uuid
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any, Optional
 
 from app.agent import Agent, AgentError
@@ -110,6 +111,9 @@ class ConversationAgent(Agent):
         self.experience_store = experience_store
         # S0.5: KnowledgeCore для pre-flight advisory (forward to Agent)
         self.knowledge_core = knowledge_core
+        # F4: трекинг активных executions для D-5A cancellation
+        self._active_executions: dict[str, dict] = {}
+        self._executions_lock = Lock()
 
     # --- session management (изоляция сессий) ---
 
@@ -335,9 +339,13 @@ class ConversationAgent(Agent):
             start_time = _time.monotonic()
 
             try:
+                def _on_start(prompt_id: str, job) -> None:
+                    self.register_execution(prompt_id, self.engine, provider, job)
+
                 job = self.engine.execute(
                     manifest, plan, provider=provider,
                     ws_timeout=ws_timeout, on_progress=on_progress,
+                    on_start=_on_start,
                 )
             except Exception as e:
                 # Ошибка execution — логируем, НО re-raise (M7 behavior)
@@ -364,6 +372,10 @@ class ConversationAgent(Agent):
                 ctx.unresolved.append({"turn": request or capability, "error": str(e)})
                 ctx.dialog_state = "error"
                 raise  # M7: re-raise после логирования
+            finally:
+                # F4: unregister execution after this attempt (no-op if not registered)
+                if job is not None and job.prompt_id:
+                    self.unregister_execution(job.prompt_id)
 
             duration = _time.monotonic() - start_time
             job.attempt = attempt
@@ -633,6 +645,7 @@ class ConversationAgent(Agent):
                 base_url=base_url,
                 ws_timeout=ws_timeout,
                 on_progress=on_progress,
+                chain=chain,  # F4: chain reference for cancellation scope
             ),
             history=self.execution_history,
             max_attempts_per_step=max_attempts,
@@ -753,6 +766,7 @@ class ConversationAgent(Agent):
         base_url: Optional[str] = None,
         ws_timeout: Optional[int] = None,
         on_progress=None,
+        chain=None,  # F4: ExecutionChain reference for cancellation scope
     ) -> Job:
         """Выполнить один шаг цепочки с asset handoff.
 
@@ -824,15 +838,22 @@ class ConversationAgent(Agent):
         plan.asset_bindings = bindings
 
         # 5) Execute
+        def _on_start(prompt_id: str, job) -> None:
+            self.register_execution(prompt_id, self.engine, provider_obj, job, chain=chain)
+
         job = self.engine.execute(
             manifest, plan, provider=provider_obj,
             ws_timeout=ws_timeout, on_progress=on_progress,
+            on_start=_on_start,
         )
-        # S0.5: attach knowledge metadata to Job (per chain step)
-        if knowledge_meta is not None:
-            job._knowledge_readiness = knowledge_meta["readiness"]
-            job._knowledge_gaps = knowledge_meta["gaps"]
-        return job
+        try:
+            # S0.5: attach knowledge metadata to Job (per chain step)
+            if knowledge_meta is not None:
+                job._knowledge_readiness = knowledge_meta["readiness"]
+                job._knowledge_gaps = knowledge_meta["gaps"]
+            return job
+        finally:
+            self.unregister_execution(job.prompt_id)
 
     def _on_chain_step_complete(
         self,
@@ -869,6 +890,49 @@ class ConversationAgent(Agent):
                 "outputs": list(step.job.output_assets),
                 "state": step.state.value,
             })
+
+    # --- F4: D-5A cancellation tracking ---
+
+    def register_execution(self, prompt_id: str, engine, provider, job, chain=None) -> None:
+        """Зарегистрировать активный execution для возможности отмены."""
+        with self._executions_lock:
+            self._active_executions[prompt_id] = {
+                "engine": engine,
+                "provider": provider,
+                "job": job,
+                "chain": chain,
+                "session_id": getattr(job, "_session_id", None),
+            }
+
+    def unregister_execution(self, prompt_id: str) -> None:
+        """Убрать execution из трекинга (завершён/ошибка/отмена)."""
+        with self._executions_lock:
+            self._active_executions.pop(prompt_id, None)
+
+    def cancel_execution(self, prompt_id: str) -> dict:
+        """Отменить активный execution (D-5A).
+
+        Возвращает факт отмены. Если execution не найден — 404-эквивалент.
+        """
+        with self._executions_lock:
+            entry = self._active_executions.get(prompt_id)
+
+        if entry is None:
+            return {"error": "not_found"}
+
+        engine = entry["engine"]
+        provider = entry["provider"]
+        job = entry["job"]
+        chain = entry.get("chain")
+
+        # F4: реальная отмена через существующий WorkflowEngine/ExecutionChain
+        if chain is not None:
+            chain.cancel()
+        if engine is not None and provider is not None:
+            engine.cancel(job, provider)
+
+        # Ждём завершения (execute() вернёт CANCELLED)
+        return {"cancelled": True, "prompt_id": prompt_id}
 
 
 def _default_planner():
