@@ -1,5 +1,40 @@
 # CHANGELOG.md
 
+## 2026-09-17 — F4 Live Execution РЕАЛИЗОВАН
+
+### ✅ Реализовано
+- **F4: зона Execution поверх существующего D-5A cancellation**
+  - Backend: реальный D-5A cancellation через `WorkflowEngine.cancel` + `ExecutionChain.cancel`
+    - `ConversationAgent._active_executions` — thread-safe трекинг активных executions
+    - `engine.execute(on_start=...)` — callback регистрирует execution ДО WS tracking
+    - `ConversationAgent.cancel_execution(prompt_id)` → `chain.cancel()` + `engine.cancel(job, provider)`
+    - `ComfyUIServer.job_status()` — GET /api/jobs/{id} из ExecutionHistory
+    - `ComfyUIServer.cancel_job()` → `agent.cancel_execution()` → fallback к job_status
+  - Frontend: `ExecutionZone` с `JobCard`, `CancelButton`, авто-refresh статуса
+  - SSE: использует существующие события — никаких новых событий
+  - Browser smoke: `/app#/execution` показывает JobCard с ID, progress%, workflow, duration, error; Cancel работает на реальных выполнениях
+
+### 📁 Файлы
+- `app/conversation.py` — execution tracking, cancel_execution
+- `app/engine/engine.py` — on_start callback
+- `app/ui.py` — job_status, реальный D-5A cancel
+- `agent_ui/src/components/Execution/ExecutionZone.tsx` — новый (98 строк)
+- `agent_ui/src/components/Execution/JobCard.tsx` — новый (72 строки)
+- `agent_ui/src/components/Execution/CancelButton.tsx` — новый (34 строки)
+- `agent_ui/src/App.tsx` — ExecutionZone на /app#/execution
+- `agent_ui/src/styles/app.css` — +80 строк стилей Execution zone
+- `tests/test_chain_step_events.py` — unit + integration тесты chain_step SSE
+
+### 🧪 Тесты
+- Frontend: `node --test` 24 passed
+- Build: `npm run build` зелёный
+- Backend: `test_chain_step_events.py` 2 passed
+
+### ⚠️ Границы
+- **НЕ сделано:** D-2 (/api/history), D-1A полный shape, полноценный E2E cancel без живого ComfyUI
+- Legacy `/` (inline UI) — не тронут
+
+---
 ## 2026-09-17 — F3 Task & Plan РЕАЛИЗОВАН
 
 ### ✅ Реализовано

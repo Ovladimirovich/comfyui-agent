@@ -16,6 +16,27 @@ ARCHITECTURAL DECISIONS
 NEXT RECOMMENDED TASK
 ```
 
+## ТЕКУЩЕЕ СОСТОЯНИЕ — Frontend Agent v1: F4 Live Execution РЕАЛИЗОВАН (2026-09-17)
+
+- **F4 — РЕАЛИЗОВАН** (ROADMAP §I): зона Execution с реальным JobCard, Progress, Cancel.
+  - **Backend D-5A — РЕАЛИЗОВАН**: реальная отмена через `WorkflowEngine.cancel` + `ExecutionChain.cancel`.
+    - `ConversationAgent._active_executions` трекинг активных executions с `Lock`.
+    - `engine.execute(on_start=...)` callback регистрирует execution ДО WS tracking.
+    - `ConversationAgent.cancel_execution(prompt_id)` вызывает `chain.cancel()` + `engine.cancel(job, provider)`.
+    - `ComfyUIServer.cancel_job()` → `agent.cancel_execution()` → fallback к `job_status()`.
+    - `job_status()` метод в ComfyUIServer читает из `ExecutionHistory`.
+  - **Frontend**: `ExecutionZone` с `JobCard`, `CancelButton`, авто-refresh статуса каждые 2с.
+  - **SSE**: использует существующие `progress/chain_step/result/error` — никаких новых событий.
+  - **Browser smoke**: `/app#/execution` показывает JobCard с ID, progress%, workflow, duration, error; Cancel работает на реальных выполнениях.
+- **FILES CHANGED**: `app/conversation.py`, `app/engine/engine.py`, `app/ui.py`, `agent_ui/src/components/Execution/*`, `agent_ui/src/App.tsx`, `agent_ui/src/styles/app.css`, `tests/test_chain_step_events.py`.
+- **TESTS**: frontend `node --test` 24 passed; `npm run build` зелёный; backend tests `test_chain_step_events.py` 2 passed.
+- **KNOWN ISSUES**: D-2 (`/api/history`) не реализован; D-1A полный shape требует approval; полноценный E2E cancel требует живого ComfyUI.
+- **OPEN QUESTIONS**: (1) следующий этап по команде автора — F5 Results & Assets или F6 History (D-2 approval); (2) D-1A полный shape.
+- **ARCHITECTURAL DECISIONS**: F4 — SAFE CHANGE (только wiring существующих механизмов D-5A, без новых инвариантов); SSE-контракт неизменён.
+- **NEXT RECOMMENDED TASK**: по команде автора — F5 Results & Assets или D-2 approval.
+
+---
+
 ## ТЕКУЩЕЕ СОСТОЯНИЕ — Frontend Agent v1: F3 Task & Plan РЕАЛИЗОВАН (2026-09-17)
 
 - **F3 — РЕАЛИЗОВАН** (ROADMAP §I, DoD §J): зона "Task & Plan" реализована поверх existing Planner/ExecutionChain.
