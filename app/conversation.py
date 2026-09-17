@@ -180,18 +180,33 @@ class ConversationAgent(Agent):
                 if self.composer is not None:
                     target = subtasks[-1].capability
                     # M26.4: вычислить experience-derived hint без изменения выбора.
+                    # M28: node_stats создаётся НЕзависимо от temporal_stats —
+                    # image.generate не имеет temporal verification, но имеет node-level experience.
                     experience_hint = None
                     if self.experience_store is not None:
                         from app.engine.experience import ExperienceAnalytics, ExperienceHint
 
                         exp_analytics = ExperienceAnalytics(self.experience_store)
                         ts = exp_analytics.temporal_stats(target)
-                        if ts is not None and ts.sample_count > 0:
+                        # M28: node_stats — отдельный gate, не зависит от temporal_stats
+                        node_stats_dict: dict = {}
+                        for exp in exp_analytics.load_all():
+                            for step in exp.steps:
+                                if step.capability == target:
+                                    for nc in step.node_classes:
+                                        ns = exp_analytics.node_stats(nc)
+                                        if ns is not None:
+                                            node_stats_dict[nc] = ns
+                        # Hint создаётся если есть ANY experience (temporal OR node-level)
+                        has_temporal = ts is not None and ts.sample_count > 0
+                        has_node = bool(node_stats_dict)
+                        if has_temporal or has_node:
                             experience_hint = ExperienceHint(
                                 capability=target,
                                 preferred_params=exp_analytics.preferred_params(target),
-                                avg_temporal_consistency=ts.avg_score,
-                                sample_count=ts.sample_count,
+                                avg_temporal_consistency=ts.avg_score if ts else None,
+                                sample_count=ts.sample_count if ts else 0,
+                                node_stats=node_stats_dict if has_node else None,
                             )
                     composition = self.composer.compose(
                         target_capability=target,
@@ -215,6 +230,7 @@ class ConversationAgent(Agent):
                     ws_timeout=ws_timeout,
                     on_progress=on_progress,
                     max_attempts=max_attempts,
+                    on_chain_step=on_chain_step,  # M19.3: UI progress events
                 )
             # else: single-step — fall through to existing code
 
@@ -386,6 +402,50 @@ class ConversationAgent(Agent):
             )
             self.execution_history.record(record)
             last_job = job
+
+            # M27: single-turn experience — record node-level learning evidence
+            # (each single turn is a de-facto 1-step chain; use prompt_id-derived id)
+            # M28: also capture workflow provenance from runtime_graph
+            if self.experience_store is not None:
+                from app.engine.experience import (
+                    ChainExperience, ChainStepExperience, build_sequence_experience,
+                    extract_workflow_provenance,
+                )
+                _turn_chain_id = f"turn-{job.prompt_id}"
+                _nc = tuple(sorted({str(n.get("class_type", "")) for n in (record.runtime_graph or {}).values()}))
+                _turn_step = ChainStepExperience(
+                    step_index=0,
+                    capability=record.capability,
+                    output_assets=record.output_assets,
+                    params=record.params,
+                    workflow_id=record.workflow_id,
+                    workflow_version=record.workflow_version,
+                    duration=record.duration,
+                    state=record.state,
+                    attempt=record.attempt,
+                    error=record.error_message,
+                    error_class=record.error_class,
+                    corrections=record.corrections_applied,
+                    node_classes=_nc,
+                )
+                _turn_exp = ChainExperience(
+                    chain_id=_turn_chain_id,
+                    session_id=session_id,
+                    intent=request or "",
+                    steps=[_turn_step],
+                )
+                # M28: extract workflow provenance from runtime_graph
+                if record.runtime_graph and record.state == "SUCCESS":
+                    _provenance = extract_workflow_provenance(
+                        runtime_graph=record.runtime_graph,
+                        workflow_id=record.workflow_id,
+                        workflow_version=record.workflow_version,
+                        params=record.params,
+                    )
+                    _turn_exp.workflow_provenance = _provenance
+                seq_exp = build_sequence_experience(_turn_exp)
+                _turn_exp.sequence_experience = seq_exp.to_dict()
+                self.experience_store.record(_turn_exp)
 
             # Решение о retry — M23+M24: передаём params, semantic_score, prompt_id
             semantic_score = None
@@ -588,6 +648,7 @@ class ConversationAgent(Agent):
                     on_chain_step({
                         "type": "chain_step",
                         "step": i,
+                        "total_steps": len(subtasks),
                         "state": step.state.value,
                         "capability": step.subtask.capability if step.subtask else None,
                         "outputs": list(step.job.output_assets) if step.job and step.job.output_assets else [],
