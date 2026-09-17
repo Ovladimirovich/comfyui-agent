@@ -26,6 +26,7 @@ import ZoneHeader from "./components/Shell/ZoneHeader";
 import SystemZone from "./components/System/SystemZone";
 import TaskPlanZone from "./components/Task/TaskPlanZone";
 import ExecutionZone from "./components/Execution/ExecutionZone";
+import ResultsZone from "./components/Results/ResultsZone";
 import type { ChainStep } from "./components/Task/PlanSteps";
 
 export default function App() {
@@ -315,6 +316,17 @@ export default function App() {
 )}
             {zone.id === "execution" && (
               <ExecutionZone sessionId={sessionId} />
+            )}
+            {zone.id === "results" && (
+              <ResultsZone
+                assets={messages[messages.length - 1]?.assets ?? []}
+                activeAsset={messages[messages.length - 1]?.assets?.[messages[messages.length - 1].assets.length - 1] ?? null}
+                activeWorkflow={messages[messages.length - 1]?.workflow ?? null}
+                jobId={messages[messages.length - 1]?.jobId ?? null}
+                dialogState={dialogState}
+                agentMessage={agentMessage}
+                error={messages[messages.length - 1]?.error ?? null}
+              />
             )}
             {zone.id === "system" && <SystemZone sessionId={sessionId} connection={connection} runtimeInfo={runtimeInfo} snapshot={snapshot} />}
             {zone.id !== "conversation" && zone.id !== "task-plan" && zone.id !== "execution" && zone.id !== "system" && <EmptyState title={zone.label} phase={zone.phase} body={zone.description} />}
